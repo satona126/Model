@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>3Dシュミレーション</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #111;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      user-select: none;
+    }
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+    /* カメラ映像とキャンバスを鏡像反転して重ねる */
+    #webcam {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      z-index: 1;
+    }
+    #three-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      pointer-events: none;
+    }
+    #beam-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 3;
+      pointer-events: none;
+    }
+    /* UIパネル */
+    #ui-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 4;
+      pointer-events: none;
+    }
+    .panel {
+      pointer-events: auto;
+      background: rgba(20, 25, 35, 0.8);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      color: white;
+      padding: 15px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+    /* 図鑑パネル */
+    #pokedex {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      width: 260px;
+    }
+    #pokedex h2 {
+      margin: 0 0 10px 0;
+      font-size: 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      padding-bottom: 5px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .dex-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      margin-bottom: 5px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 14px;
+      transition: all 0.3s;
+    }
+    .dex-item.unlocked {
+      background: rgba(76, 175, 80, 0.25);
+      border: 1px solid rgba(76, 175, 80, 0.5);
+    }
+    .dex-item.rare.unlocked {
+      background: rgba(255, 215, 0, 0.25);
+      border: 1px solid rgba(255, 215, 0, 0.8);
+      color: #ffd700;
+      font-weight: bold;
+    }
+    /* 操作ガイド・ステータス */
+    #status-box {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    /* 全削除ボタン */
+    #clear-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      pointer-events: auto;
+      background: linear-gradient(135deg, #ff416c, #ff4b2b);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(255, 75, 43, 0.5);
+      transition: transform 0.1s, box-shadow 0.2s;
+    }
+    #clear-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 20px rgba(255, 75, 43, 0.8);
+    }
+    #clear-btn:active {
+      transform: scale(0.95);
+    }
+    /* レア出現時の通知バナー */
+    #notification {
+      position: absolute;
+      top: 20%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      background: linear-gradient(45deg, #f1c40f, #e67e22);
+      color: #fff;
+      padding: 15px 40px;
+      border-radius: 50px;
+      font-size: 24px;
+      font-weight: bold;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      box-shadow: 0 0 30px rgba(241, 196, 15, 0.8);
+      transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      pointer-events: none;
+    }
+    #notification.show {
+      transform: translate(-50%, -50%) scale(1);
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 20px;
+      z-index: 10;
+      background: rgba(0,0,0,0.8);
+      padding: 20px 30px;
+      border-radius: 10px;
+    }
+  </style>
+  <!-- Three.js & MediaPipe Hands -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="container">
+    <div id="loading">カメラとAIモデルを読み込み中...</div>
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="three-canvas"></canvas>
+    <canvas id="beam-canvas"></canvas>
+
+    <div id="ui-layer">
+      <div id="pokedex" class="panel">
+        <h2>📖 3Dモデル図鑑 <span id="dex-count">0/7</span></h2>
+        <div id="dex-list"></div>
+      </div>
+
+      <button id="clear-btn">⚡ 全削除ビーム</button>
+
+      <div id="notification">✨ RARE GET! ✨</div>
+
+      <div id="status-box" class="panel">
+        <div>✋ <b>パー</b>：手のひらから3Dモデル出現</div>
+        <div>🤏 <b>つまむ (親指＋人差し指)</b>：モデルを掴んで移動</div>
+        <div>状態: <span id="hand-state" style="color:#4caf50; font-weight:bold;">待機中</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. 図鑑とモデル定義
+    // ==========================================
+    const MODEL_TYPES = [
+      { id: 'duck', name: 'アヒル', rate: '通常', rare: false, count: 0 },
+      { id: 'plane', name: '飛行機', rate: '通常', rare: false, count: 0 },
+      { id: 'train', name: '電車', rate: '通常', rare: false, count: 0 },
+      { id: 'monkey', name: '猿', rate: '通常', rare: false, count: 0 },
+      { id: 'smile', name: '黄色い丸いスマイル', rate: '通常', rare: false, count: 0 },
+      { id: 'gold_duck', name: '金のアヒル', rate: '1.0%', rare: true, count: 0 },
+      { id: 'gold_house', name: '金の家', rate: '0.5%', rare: true, count: 0 }
+    ];
+
+    function updatePokedexUI() {
+      const listEl = document.getElementById('dex-list');
+      listEl.innerHTML = '';
+      let unlockedCount = 0;
+
+      MODEL_TYPES.forEach(item => {
+        if (item.count > 0) unlockedCount++;
+        const div = document.createElement('div');
+        div.className = `dex-item ${item.count > 0 ? 'unlocked' : ''} ${item.rare ? 'rare' : ''}`;
+        const displayName = item.count > 0 ? item.name : '？？？';
+        div.innerHTML = `
+          <span>${displayName}</span>
+          <span>${item.count > 0 ? `×${item.count}` : item.rate}</span>
+        `;
+        listEl.appendChild(div);
+      });
+
+      document.getElementById('dex-count').innerText = `${unlockedCount}/${MODEL_TYPES.length}`;
+    }
+    updatePokedexUI();
+
+    function showNotification(text) {
+      const el = document.getElementById('notification');
+      el.innerText = text;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    // 確率抽選ロジック
+    function rollModelType() {
+      const r = Math.random() * 100;
+      if (r < 0.5) return MODEL_TYPES.find(m => m.id === 'gold_house'); // 0.5%
+      if (r < 1.5) return MODEL_TYPES.find(m => m.id === 'gold_duck');  // 1.0% (0.5 ~ 1.5)
+      const normals = MODEL_TYPES.filter(m => !m.rare);
+      return normals[Math.floor(Math.random() * normals.length)];
+    }
+
+    // ==========================================
+    // 2. Three.js セットアップ & 3Dモデル生成
+    // ==========================================
+    const threeCanvas = document.getElementById('three-canvas');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.z = 10;
+
+    const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: true, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    // ライティング
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(5, 10, 7);
+    scene.add(dirLight);
+    const pointLight = new THREE.PointLight(0xffea00, 0.8, 20);
+    pointLight.position.set(-5, -5, 5);
+    scene.add(pointLight);
+
+    // プロシージャル3Dモデルビルダー
+    function create3DModel(typeId) {
+      const group = new THREE.Group();
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.85, roughness: 0.15 });
+      const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+      if (typeId === 'duck' || typeId === 'gold_duck') {
+        const isGold = typeId === 'gold_duck';
+        const bodyMat = isGold ? goldMat : new THREE.MeshStandardMaterial({ color: 0xffeb3b, roughness: 0.3 });
+        const beakMat = isGold ? goldMat : new THREE.MeshStandardMaterial({ color: 0xff9800 });
+
+        // 体
+        const body = new THREE.Mesh(new THREE.SphereGeometry(0.6, 20, 20), bodyMat);
+        body.scale.set(1.2, 0.9, 0.9);
+        group.add(body);
+        // 頭
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.4, 20, 20), bodyMat);
+        head.position.set(0.45, 0.55, 0);
+        group.add(head);
+        // くちばし
+        const beak = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.4, 16), beakMat);
+        beak.rotation.z = -Math.PI / 2;
+        beak.position.set(0.85, 0.5, 0);
+        group.add(beak);
+        // 目
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), blackMat);
+        eyeL.position.set(0.65, 0.68, 0.25);
+        const eyeR = eyeL.clone();
+        eyeR.position.z = -0.25;
+        group.add(eyeL, eyeR);
+
+      } else if (typeId === 'plane') {
+        const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+        const blueMat = new THREE.MeshStandardMaterial({ color: 0x2196f3 });
+        // 胴体
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 1.6, 16), whiteMat);
+        body.rotation.z = Math.PI / 2;
+        group.add(body);
+        // 機首
+        const nose = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), blueMat);
+        nose.position.x = 0.8;
+        group.add(nose);
+        // 主翼
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 1.8), blueMat);
+        wing.position.set(0.1, 0, 0);
+        group.add(wing);
+        // 尾翼
+        const tail = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.05), blueMat);
+        tail.position.set(-0.65, 0.25, 0);
+        group.add(tail);
+
+      } else if (typeId === 'train') {
+        const greenMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
+        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffeb3b });
+        // 車体
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.65, 0.6), greenMat);
+        group.add(body);
+        // 帯
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.15, 0.62), yellowMat);
+        group.add(stripe);
+        // 車輪
+        for (let x of [-0.5, 0, 0.5]) {
+          for (let z of [-0.32, 0.32]) {
+            const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.08, 16), blackMat);
+            wheel.rotation.x = Math.PI / 2;
+            wheel.position.set(x, -0.35, z);
+            group.add(wheel);
+          }
+        }
+
+      } else if (typeId === 'monkey') {
+        const brownMat = new THREE.MeshStandardMaterial({ color: 0x795548 });
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0xffccbc });
+        // 頭
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 20, 20), brownMat);
+        group.add(head);
+        // 顔パーツ
+        const face = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 16), skinMat);
+        face.position.set(0, -0.05, 0.22);
+        group.add(face);
+        // 耳
+        const earL = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), brownMat);
+        earL.position.set(-0.58, 0.05, 0);
+        const earR = earL.clone();
+        earR.position.x = 0.58;
+        group.add(earL, earR);
+        // 目
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), blackMat);
+        eyeL.position.set(-0.15, 0.1, 0.6);
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.15;
+        group.add(eyeL, eyeR);
+
+      } else if (typeId === 'smile') {
+        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffd600, roughness: 0.2 });
+        // 丸い顔
+        const face = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.25, 32), yellowMat);
+        face.rotation.x = Math.PI / 2;
+        group.add(face);
+        // 目
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 12), blackMat);
+        eyeL.position.set(-0.22, 0.2, 0.13);
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.22;
+        group.add(eyeL, eyeR);
+        // 口（スマイルの弧）
+        const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.05, 12, 24, Math.PI), blackMat);
+        mouth.rotation.z = Math.PI;
+        mouth.position.set(0, 0.02, 0.13);
+        group.add(mouth);
+
+      } else if (typeId === 'gold_house') {
+        // 土台
+        const base = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.9), goldMat);
+        base.position.y = -0.15;
+        group.add(base);
+        // 屋根
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.6, 4), goldMat);
+        roof.rotation.y = Math.PI / 4;
+        roof.position.y = 0.5;
+        group.add(roof);
+        // 煙突
+        const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.4, 0.18), goldMat);
+        chimney.position.set(0.25, 0.5, 0.1);
+        group.add(chimney);
+      }
+
+      // スケールアニメーション用の初期設定
+      group.scale.set(0.01, 0.01, 0.01);
+      group.userData = {
+        targetScale: 0.85,
+        rotSpeed: (Math.random() - 0.5) * 0.03 + 0.015,
+        floatOffset: Math.random() * Math.PI * 2,
+        isGrabbed: false
+      };
+
+      return group;
+    }
+
+    const spawnedObjects = [];
+
+    function spawnModelAt(worldPos) {
+      const modelInfo = rollModelType();
+      modelInfo.count++;
+      updatePokedexUI();
+
+      if (modelInfo.rare) {
+        showNotification(`✨ 超レア！「${modelInfo.name}」出現！ ✨`);
+      }
+
+      const mesh = create3DModel(modelInfo.id);
+      mesh.position.copy(worldPos);
+      scene.add(mesh);
+      spawnedObjects.push(mesh);
+    }
+
+    // 画面正規化座標(0~1)をThree.jsのワールド座標(Z=0平面)に変換
+    function normalizedToWorld(nx, ny) {
+      // ビデオが鏡像反転(scaleX(-1))されているためXを反転
+      const ndcX = (1 - nx) * 2 - 1;
+      const ndcY = -(ny * 2 - 1);
+      const vec = new THREE.Vector3(ndcX, ndcY, 0.5);
+      vec.unproject(camera);
+      const dir = vec.sub(camera.position).normalize();
+      const distance = -camera.position.z / dir.z;
+      return camera.position.clone().add(dir.multiplyScalar(distance));
+    }
+
+    // ==========================================
+    // 3. 手のジェスチャー認識 (MediaPipe Hands)
+    // ==========================================
+    const videoElement = document.getElementById('webcam');
+    const handStateEl = document.getElementById('hand-state');
+
+    let lastSpawnTime = 0;
+    let wasOpenHand = false;
+    let grabbedObject = null;
+
+    // 距離計算ヘルパー
+    function dist2D(p1, p2) {
+      return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
+
+    // パー判定（4本の指が伸びているか）
+    function isHandOpen(landmarks) {
+      const wrist = landmarks[0];
+      const fingerTips = [8, 12, 16, 20];
+      const fingerPips = [6, 10, 14, 18];
+      let extendedCount = 0;
+
+      for (let i = 0; i < 4; i++) {
+        if (dist2D(wrist, landmarks[fingerTips[i]]) > dist2D(wrist, landmarks[fingerPips[i]]) * 1.15) {
+          extendedCount++;
+        }
+      }
+      // 親指も開いているか
+      const thumbExtended = dist2D(landmarks[4], landmarks[17]) > dist2D(landmarks[2], landmarks[17]) * 1.1;
+      return extendedCount >= 4 && thumbExtended;
+    }
+
+    // つまむ判定（親指先端[4]と人差し指先端[8]が近いか）
+    function isPinching(landmarks) {
+      const pinchDist = dist2D(landmarks[4], landmarks[8]);
+      const handSize = dist2D(landmarks[0], landmarks[9]); // 手首から中指付け根までの基準サイズ
+      return pinchDist < handSize * 0.35;
+    }
+
+    function onResults(results) {
+      document.getElementById('loading').style.display = 'none';
+
+      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+        handStateEl.innerText = '手を検知していません';
+        handStateEl.style.color = '#aaa';
+        wasOpenHand = false;
+        if (grabbedObject) {
+          grabbedObject.userData.isGrabbed = false;
+          grabbedObject = null;
+        }
+        return;
+      }
+
+      const landmarks = results.multiHandLandmarks[0];
+      const open = isHandOpen(landmarks);
+      const pinch = isPinching(landmarks);
+
+      // 1. つまむ動作（掴む・移動）
+      if (pinch) {
+        handStateEl.innerText = '🤏 つまみ中 (モデル移動)';
+        handStateEl.style.color = '#ff9800';
+        wasOpenHand = false;
+
+        // 親指と人差し指の中間点
+        const midX = (landmarks[4].x + landmarks[8].x) / 2;
+        const midY = (landmarks[4].y + landmarks[8].y) / 2;
+        const pinchWorldPos = normalizedToWorld(midX, midY);
+
+        if (!grabbedObject) {
+          // 一番近いモデルを探す
+          let minDist = 1.8; // 掴める判定半径
+          for (let obj of spawnedObjects) {
+            const d = obj.position.distanceTo(pinchWorldPos);
+            if (d < minDist) {
+              minDist = d;
+              grabbedObject = obj;
+            }
+          }
+        }
+
+        if (grabbedObject) {
+          grabbedObject.userData.isGrabbed = true;
+          grabbedObject.position.lerp(pinchWorldPos, 0.4); // スムーズに追従
+        }
+        return;
+      } else {
+        if (grabbedObject) {
+          grabbedObject.userData.isGrabbed = false;
+          grabbedObject = null;
+        }
+      }
+
+      // 2. パー動作（モデル出現）
+      if (open) {
+        handStateEl.innerText = '✋ パー検知！';
+        handStateEl.style.color = '#4caf50';
+
+        const now = Date.now();
+        // 手を開いた瞬間、または開き続けて1.2秒ごとに生成
+        if (!wasOpenHand || (now - lastSpawnTime > 1200)) {
+          // 手のひらの中心（中指付け根[9]と手首[0]の中間）
+          const palmX = (landmarks[0].x + landmarks[9].x) / 2;
+          const palmY = (landmarks[0].y + landmarks[9].y) / 2;
+          const worldPos = normalizedToWorld(palmX, palmY);
+
+          spawnModelAt(worldPos);
+          lastSpawnTime = now;
+        }
+        wasOpenHand = true;
+      } else {
+        handStateEl.innerText = '✊ ニュートラル';
+        handStateEl.style.color = '#2196f3';
+        wasOpenHand = false;
+      }
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.65,
+      minTrackingConfidence: 0.65
+    });
+    hands.onResults(onResults);
+
+    const cameraUtils = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({ image: videoElement });
+      },
+      width: 1280,
+      height: 720
+    });
+    cameraUtils.start();
+
+    // ==========================================
+    // 4. 全削除ビームエフェクト & 削除処理
+    // ==========================================
+    const beamCanvas = document.getElementById('beam-canvas');
+    const bCtx = beamCanvas.getContext('2d');
+    beamCanvas.width = window.innerWidth;
+    beamCanvas.height = window.innerHeight;
+
+    let beamActive = false;
+    let beamProgress = 0;
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      if (beamActive) return;
+      beamActive = true;
+      beamProgress = 0;
+      grabbedObject = null;
+    });
+
+    function updateAndDrawBeam() {
+      bCtx.clearRect(0, 0, beamCanvas.width, beamCanvas.height);
+      if (!beamActive) return;
+
+      beamProgress += 0.035; // ビームの進行速度
+      const w = beamCanvas.width;
+      const h = beamCanvas.height;
+
+      // 左から右へ薙ぎ払うレーザービーム
+      const beamX = w * Math.min(beamProgress * 1.3, 1.2);
+
+      // 画面フラッシュ
+      if (beamProgress < 0.3) {
+        bCtx.fillStyle = `rgba(0, 229, 255, ${(0.3 - beamProgress) * 0.8})`;
+        bCtx.fillRect(0, 0, w, h);
+      }
+
+      // メインビーム描画
+      const grad = bCtx.createLinearGradient(0, 0, beamX, 0);
+      grad.addColorStop(0, 'rgba(0, 229, 255, 0.1)');
+      grad.addColorStop(0.8, 'rgba(0, 229, 255, 0.8)');
+      grad.addColorStop(1, '#ffffff');
+
+      bCtx.fillStyle = grad;
+      bCtx.fillRect(0, 0, beamX, h);
+
+      // 先端のエネルギーコア（縦の光の柱）
+      bCtx.shadowBlur = 40;
+      bCtx.shadowColor = '#00e5ff';
+      bCtx.fillStyle = '#ffffff';
+      bCtx.fillRect(beamX - 25, 0, 50, h);
+      bCtx.shadowBlur = 0;
+
+      // ビームが通過した位置にある3Dモデルを消滅させる
+      for (let i = spawnedObjects.length - 1; i >= 0; i--) {
+        const obj = spawnedObjects[i];
+        // ワールド座標をスクリーンX座標に変換
+        const proj = obj.position.clone().project(camera);
+        const screenX = (proj.x * 0.5 + 0.5) * w;
+
+        if (screenX <= beamX) {
+          scene.remove(obj);
+          spawnedObjects.splice(i, 1);
+        }
+      }
+
+      if (beamProgress >= 1.1) {
+        beamActive = false;
+        // 念のため残りを全削除
+        while (spawnedObjects.length > 0) {
+          scene.remove(spawnedObjects.pop());
+        }
+      }
+    }
+
+    // ==========================================
+    // 5. メインアニメーションループ & リサイズ対応
+    // ==========================================
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const elapsed = clock.getElapsedTime();
+
+      spawnedObjects.forEach(obj => {
+        // 出現時のポップアップスケールアニメーション
+        const targetS = obj.userData.isGrabbed ? 1.15 : obj.userData.targetScale;
+        obj.scale.lerp(new THREE.Vector3(targetS, targetS, targetS), 0.15);
+
+        // 回転とふわふわ浮遊
+        obj.rotation.y += obj.userData.rotSpeed;
+        if (!obj.userData.isGrabbed) {
+          obj.position.y += Math.sin(elapsed * 2 + obj.userData.floatOffset) * 0.003;
+        }
+      });
+
+      renderer.render(scene, camera);
+      updateAndDrawBeam();
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      beamCanvas.width = window.innerWidth;
+      beamCanvas.height = window.innerHeight;
+    });
+  </script>
+</body>
+</html>
