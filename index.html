@@ -263,7 +263,7 @@
       <div id="rate-box" class="panel">
         <div>レア確率倍率</div>
         <div id="rate-multiplier">1倍</div>
-        <div id="rate-timer" style="font-size:11px; color:#ccc;">次の2倍まで: 30秒</div>
+        <div id="rate-timer" style="font-size:11px; color:#ccc;">次の2倍まで: 20秒</div>
       </div>
     </div>
   </div>
@@ -273,15 +273,15 @@
     // 1. 図鑑とモデル定義
     // ==========================================
     const MODEL_TYPES = [
-      { id: 'duck', name: 'アヒル', rate: '通常', rare: 0, count: 0 },
-      { id: 'plane', name: '飛行機', rate: '通常', rare: 0, count: 0 },
-      { id: 'train', name: '電車', rate: '通常', rare: 0, count: 0 },
-      { id: 'monkey', name: '猿', rate: '通常', rare: 0, count: 0 },
-      { id: 'smile', name: '黄色い丸いスマイル', rate: '通常', rare: 0, count: 0 },
-      { id: 'gold_duck', name: '金のアヒル', rate: '1.0%', rare: 1, count: 0 },
-      { id: 'gold_house', name: '金の家', rate: '0.5%', rare: 1, count: 0 },
-      { id: 'gold_tower', name: '金の東京タワー', rate: '0.1%', rare: 2, count: 0 },
-      { id: 'gold_clock', name: '金の時計', rate: '0.05%', rare: 2, count: 0 }
+      { id: 'duck', name: 'アヒル', baseRate: null, rare: 0, count: 0 },
+      { id: 'plane', name: '飛行機', baseRate: null, rare: 0, count: 0 },
+      { id: 'train', name: '電車', baseRate: null, rare: 0, count: 0 },
+      { id: 'monkey', name: '猿', baseRate: null, rare: 0, count: 0 },
+      { id: 'smile', name: '黄色い丸いスマイル', baseRate: null, rare: 0, count: 0 },
+      { id: 'gold_duck', name: '金のアヒル', baseRate: 1.0, rare: 1, count: 0 },
+      { id: 'gold_house', name: '金の家', baseRate: 0.5, rare: 1, count: 0 },
+      { id: 'gold_tower', name: '金の東京タワー', baseRate: 0.1, rare: 2, count: 0 },
+      { id: 'gold_clock', name: '金の時計', baseRate: 0.05, rare: 2, count: 0 }
     ];
 
     // 図鑑ボタンの開閉処理
@@ -291,8 +291,9 @@
       pokedexPanel.classList.toggle('open');
     });
 
-    // 30秒ごとにレア確率倍率が 1倍 → 2倍 → 4倍 → 8倍 → 10倍 と上昇
-    const MULTIPLIER_STEPS = [1, 2, 4, 8, 10];
+    // 20秒ごとにレア確率倍率が 1倍 → 2倍 → 4倍 → 8倍 → 10倍 → 20倍 → 50倍 → 100倍 と上昇
+    const MULTIPLIER_STEPS = [1, 2, 4, 8, 10, 20, 50, 100];
+    const STEP_INTERVAL = 20;
     let multiplierStepIndex = 0;
     let elapsedForMultiplier = 0;
 
@@ -300,14 +301,20 @@
       return MULTIPLIER_STEPS[multiplierStepIndex];
     }
 
+    function formatRateDisplay(baseRate) {
+      if (baseRate === null) return '通常';
+      const val = Math.min(100, baseRate * getCurrentMultiplier());
+      return `${Number(val.toFixed(2))}%`;
+    }
+
     function updateRateUI() {
       const mult = getCurrentMultiplier();
       document.getElementById('rate-multiplier').innerText = `${mult}倍`;
       const timerEl = document.getElementById('rate-timer');
       if (multiplierStepIndex >= MULTIPLIER_STEPS.length - 1) {
-        timerEl.innerText = '最大倍率 (10倍) 到達！';
+        timerEl.innerText = '最大倍率 (100倍) 到達！';
       } else {
-        const remaining = Math.max(0, Math.ceil(30 - elapsedForMultiplier));
+        const remaining = Math.max(0, Math.ceil(STEP_INTERVAL - elapsedForMultiplier));
         const nextMult = MULTIPLIER_STEPS[multiplierStepIndex + 1];
         timerEl.innerText = `次の${nextMult}倍まで: ${remaining}秒`;
       }
@@ -325,9 +332,10 @@
         let rareClass = item.rare === 2 ? 'super-rare' : (item.rare === 1 ? 'rare' : '');
         div.className = `dex-item ${item.count > 0 ? 'unlocked' : ''} ${rareClass}`;
         const displayName = item.count > 0 ? item.name : '？？？';
+        const rateText = formatRateDisplay(item.baseRate);
         div.innerHTML = `
           <span>${displayName}</span>
-          <span>${item.count > 0 ? `×${item.count}` : item.rate}</span>
+          <span>${item.count > 0 ? `×${item.count} (${rateText})` : rateText}</span>
         `;
         listEl.appendChild(div);
       });
@@ -348,11 +356,18 @@
 
     function rollModelType() {
       const mult = getCurrentMultiplier();
-      // 基礎確率（%）に現在の倍率を掛ける（最大100%でクランプ）
-      const clockChance = Math.min(100, 0.05 * mult);
-      const towerChance = Math.min(100, 0.1 * mult);
-      const houseChance = Math.min(100, 0.5 * mult);
-      const duckChance  = Math.min(100, 1.0 * mult);
+      // 基礎確率（%）に現在の倍率を掛ける（合計が100%を超える場合はレア枠内で正規化）
+      const rawClock = 0.05 * mult;
+      const rawTower = 0.1 * mult;
+      const rawHouse = 0.5 * mult;
+      const rawDuck  = 1.0 * mult;
+      const totalRare = rawClock + rawTower + rawHouse + rawDuck;
+
+      const scale = totalRare > 100 ? (100 / totalRare) : 1;
+      const clockChance = rawClock * scale;
+      const towerChance = rawTower * scale;
+      const houseChance = rawHouse * scale;
+      const duckChance  = rawDuck * scale;
 
       const r = Math.random() * 100;
       let cumulative = 0;
@@ -598,12 +613,10 @@
         radius = 0.78;
 
       } else if (typeId === 'gold_clock') {
-        // 超レア0.05%：金の時計（懐中時計・置時計風）
         const caseMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.22, 32), goldMat);
         caseMesh.rotation.x = Math.PI / 2;
         group.add(caseMesh);
 
-        // 文字盤（少し明るめのシャンパンゴールド）
         const dialMat = new THREE.MeshStandardMaterial({
           color: 0xfff3b0,
           metalness: 0.85,
@@ -614,7 +627,6 @@
         dial.rotation.x = Math.PI / 2;
         group.add(dial);
 
-        // 12時・3時・6時・9時の目盛り
         for (let k = 0; k < 4; k++) {
           const angle = (k * Math.PI) / 2;
           const marker = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.09, 0.03), blackMat);
@@ -623,7 +635,6 @@
           group.add(marker);
         }
 
-        // 長針・短針・中心軸
         const hourHand = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.24, 0.03), blackMat);
         hourHand.position.set(0.08, 0.08, 0.135);
         hourHand.rotation.z = -Math.PI / 4;
@@ -638,7 +649,6 @@
         centerPin.position.z = 0.145;
         group.add(centerPin);
 
-        // 上部のリューズ（つまみ）とリング
         const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.16, 16), goldMat);
         crown.position.set(0, 0.65, 0);
         group.add(crown);
@@ -675,9 +685,9 @@
       updatePokedexUI();
 
       if (modelInfo.id === 'gold_clock') {
-        showNotification(`⌚ 驚異の0.05%！「${modelInfo.name}」出現！！ ⌚`, true);
+        showNotification(`⌚ 驚異のレア！「${modelInfo.name}」出現！！ ⌚`, true);
       } else if (modelInfo.rare === 2) {
-        showNotification(`👑 奇跡の0.1%！「${modelInfo.name}」降臨！！ 👑`, true);
+        showNotification(`👑 奇跡のレア！「${modelInfo.name}」降臨！！ 👑`, true);
       } else if (modelInfo.rare === 1) {
         showNotification(`✨ 超レア！「${modelInfo.name}」出現！ ✨`, false);
       }
@@ -1026,14 +1036,15 @@
       requestAnimationFrame(animate);
       const dt = Math.min(clock.getDelta(), 0.05);
 
-      // 30秒ごとのレア確率倍率アップタイマー
+      // 20秒ごとのレア確率倍率アップタイマー
       if (multiplierStepIndex < MULTIPLIER_STEPS.length - 1) {
         elapsedForMultiplier += dt;
-        if (elapsedForMultiplier >= 30) {
-          elapsedForMultiplier -= 30;
+        if (elapsedForMultiplier >= STEP_INTERVAL) {
+          elapsedForMultiplier -= STEP_INTERVAL;
           multiplierStepIndex++;
           const newMult = getCurrentMultiplier();
-          showNotification(`🔥 レア確率が ${newMult}倍 にアップ！ 🔥`, newMult >= 8);
+          showNotification(`🔥 レア確率が ${newMult}倍 にアップ！ 🔥`, newMult >= 10);
+          updatePokedexUI(); // 図鑑内に書かれている確率も更新
         }
         updateRateUI();
       }
