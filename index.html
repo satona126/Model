@@ -291,8 +291,8 @@
       pokedexPanel.classList.toggle('open');
     });
 
-    // 20秒ごとにレア確率倍率が 1倍 → 2倍 → 4倍 → 8倍 → 10倍 → 20倍 → 50倍 → 100倍 と上昇
-    const MULTIPLIER_STEPS = [1, 2, 4, 8, 10, 20, 50, 100];
+    // 20秒ごとにレア確率倍率が 1倍 → 2倍 → 4倍 → 8倍 → 10倍 → 20倍 → 50倍 → 100倍 → 200倍 → 500倍 → 750倍 → 1000倍 と上昇
+    const MULTIPLIER_STEPS = [1, 2, 4, 8, 10, 20, 50, 100, 200, 500, 750, 1000];
     const STEP_INTERVAL = 20;
     let multiplierStepIndex = 0;
     let elapsedForMultiplier = 0;
@@ -312,7 +312,7 @@
       document.getElementById('rate-multiplier').innerText = `${mult}倍`;
       const timerEl = document.getElementById('rate-timer');
       if (multiplierStepIndex >= MULTIPLIER_STEPS.length - 1) {
-        timerEl.innerText = '最大倍率 (100倍) 到達！';
+        timerEl.innerText = '最大倍率 (1000倍) 到達！';
       } else {
         const remaining = Math.max(0, Math.ceil(STEP_INTERVAL - elapsedForMultiplier));
         const nextMult = MULTIPLIER_STEPS[multiplierStepIndex + 1];
@@ -925,7 +925,6 @@
       return Math.hypot(p1.x - p2.x, p1.y - p2.y);
     }
 
-    // 少し緩めで安定したパー判定（手首から指先までの距離比率＋指先同士の広がり）
     function isHandOpen(landmarks) {
       const wrist = landmarks[0];
       const fingerTips = [8, 12, 16, 20];
@@ -1017,7 +1016,6 @@
         handStateEl.style.color = '#4caf50';
 
         const now = Date.now();
-        // 連続生成クールダウンを少し短縮（750ms）して取りこぼしを防止
         if (!wasOpenHand || (now - lastSpawnTime > 750)) {
           const palmX = (landmarks[0].x + landmarks[9].x) / 2;
           const palmY = (landmarks[0].y + landmarks[9].y) / 2;
@@ -1045,7 +1043,6 @@
     });
     hands.onResults(onResults);
 
-    // 途中で推論が詰まったりストリームが途切れたりしても自動復旧するループ
     let isSendingFrame = false;
     let lastProcessedFrameTime = Date.now();
 
@@ -1058,7 +1055,6 @@
         videoElement.srcObject = stream;
         await videoElement.play();
 
-        // ストリームが途中で終了した場合の自動再起動
         const tracks = stream.getVideoTracks();
         if (tracks.length > 0) {
           tracks[0].addEventListener('ended', () => {
@@ -1072,7 +1068,6 @@
 
       async function processVideoFrame() {
         const now = Date.now();
-        // 万が一 isSendingFrame が5秒以上張り付いた場合はリセットして復旧
         if (isSendingFrame && now - lastProcessedFrameTime > 5000) {
           isSendingFrame = false;
         }
@@ -1083,7 +1078,6 @@
           try {
             await hands.send({ image: videoElement });
           } catch (e) {
-            // 推論エラー時もループを止めずに継続
           } finally {
             isSendingFrame = false;
             lastProcessedFrameTime = Date.now();
@@ -1113,7 +1107,6 @@
       beamActive = true;
       beamProgress = 0;
       if (grabbedObject && grabbedObject.userData.indestructible) {
-        // 消えないモデルを掴んでいる場合はそのまま維持
       } else {
         grabbedObject = null;
       }
