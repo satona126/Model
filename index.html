@@ -63,11 +63,57 @@
       padding: 15px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     }
-    #pokedex {
+    /* 図鑑ボタン＆スライドパネル */
+    #pokedex-toggle-btn {
       position: absolute;
       top: 20px;
       left: 20px;
-      width: 270px;
+      pointer-events: auto;
+      background: linear-gradient(135deg, #2196f3, #00bcd4);
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0, 188, 212, 0.5);
+      transition: transform 0.1s, box-shadow 0.2s;
+      z-index: 6;
+    }
+    #pokedex-toggle-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 20px rgba(0, 188, 212, 0.8);
+    }
+    #pokedex-toggle-btn:active {
+      transform: scale(0.95);
+    }
+    #pokedex {
+      position: absolute;
+      top: 72px;
+      left: 20px;
+      width: 280px;
+      max-height: 0;
+      opacity: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      overflow: hidden;
+      transform: translateY(-16px) scaleY(0.85);
+      transform-origin: top center;
+      transition: max-height 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+                  opacity 0.3s ease,
+                  padding 0.35s ease,
+                  transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+      pointer-events: none;
+      z-index: 5;
+    }
+    #pokedex.open {
+      max-height: 520px;
+      opacity: 1;
+      padding-top: 15px;
+      padding-bottom: 15px;
+      transform: translateY(0) scaleY(1);
+      pointer-events: auto;
     }
     #pokedex h2 {
       margin: 0 0 10px 0;
@@ -111,6 +157,21 @@
       left: 20px;
       font-size: 13px;
       line-height: 1.6;
+    }
+    /* 右下の現在倍率パネル */
+    #rate-box {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      font-size: 15px;
+      font-weight: bold;
+      text-align: right;
+      line-height: 1.5;
+    }
+    #rate-multiplier {
+      font-size: 22px;
+      color: #ffd700;
+      text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
     }
     #clear-btn {
       position: absolute;
@@ -182,8 +243,10 @@
     <canvas id="beam-canvas"></canvas>
 
     <div id="ui-layer">
+      <button id="pokedex-toggle-btn">📖 図鑑</button>
+
       <div id="pokedex" class="panel">
-        <h2>📖 3Dモデル図鑑 <span id="dex-count">0/8</span></h2>
+        <h2>📖 3Dモデル図鑑 <span id="dex-count">0/9</span></h2>
         <div id="dex-list"></div>
       </div>
 
@@ -195,6 +258,12 @@
         <div>✋ <b>パー</b>：手のひらから3Dモデル出現＆落下</div>
         <div>🤏 <b>つまむ</b>：モデルを掴んで持ち上げる・投げる</div>
         <div>状態: <span id="hand-state" style="color:#4caf50; font-weight:bold;">待機中</span></div>
+      </div>
+
+      <div id="rate-box" class="panel">
+        <div>レア確率倍率</div>
+        <div id="rate-multiplier">1倍</div>
+        <div id="rate-timer" style="font-size:11px; color:#ccc;">次の2倍まで: 30秒</div>
       </div>
     </div>
   </div>
@@ -211,8 +280,39 @@
       { id: 'smile', name: '黄色い丸いスマイル', rate: '通常', rare: 0, count: 0 },
       { id: 'gold_duck', name: '金のアヒル', rate: '1.0%', rare: 1, count: 0 },
       { id: 'gold_house', name: '金の家', rate: '0.5%', rare: 1, count: 0 },
-      { id: 'gold_tower', name: '金の東京タワー', rate: '0.1%', rare: 2, count: 0 }
+      { id: 'gold_tower', name: '金の東京タワー', rate: '0.1%', rare: 2, count: 0 },
+      { id: 'gold_clock', name: '金の時計', rate: '0.05%', rare: 2, count: 0 }
     ];
+
+    // 図鑑ボタンの開閉処理
+    const pokedexBtn = document.getElementById('pokedex-toggle-btn');
+    const pokedexPanel = document.getElementById('pokedex');
+    pokedexBtn.addEventListener('click', () => {
+      pokedexPanel.classList.toggle('open');
+    });
+
+    // 30秒ごとにレア確率倍率が 1倍 → 2倍 → 4倍 → 8倍 → 10倍 と上昇
+    const MULTIPLIER_STEPS = [1, 2, 4, 8, 10];
+    let multiplierStepIndex = 0;
+    let elapsedForMultiplier = 0;
+
+    function getCurrentMultiplier() {
+      return MULTIPLIER_STEPS[multiplierStepIndex];
+    }
+
+    function updateRateUI() {
+      const mult = getCurrentMultiplier();
+      document.getElementById('rate-multiplier').innerText = `${mult}倍`;
+      const timerEl = document.getElementById('rate-timer');
+      if (multiplierStepIndex >= MULTIPLIER_STEPS.length - 1) {
+        timerEl.innerText = '最大倍率 (10倍) 到達！';
+      } else {
+        const remaining = Math.max(0, Math.ceil(30 - elapsedForMultiplier));
+        const nextMult = MULTIPLIER_STEPS[multiplierStepIndex + 1];
+        timerEl.innerText = `次の${nextMult}倍まで: ${remaining}秒`;
+      }
+    }
+    updateRateUI();
 
     function updatePokedexUI() {
       const listEl = document.getElementById('dex-list');
@@ -247,10 +347,28 @@
     }
 
     function rollModelType() {
+      const mult = getCurrentMultiplier();
+      // 基礎確率（%）に現在の倍率を掛ける（最大100%でクランプ）
+      const clockChance = Math.min(100, 0.05 * mult);
+      const towerChance = Math.min(100, 0.1 * mult);
+      const houseChance = Math.min(100, 0.5 * mult);
+      const duckChance  = Math.min(100, 1.0 * mult);
+
       const r = Math.random() * 100;
-      if (r < 0.1) return MODEL_TYPES.find(m => m.id === 'gold_tower'); // 0.1%
-      if (r < 0.6) return MODEL_TYPES.find(m => m.id === 'gold_house'); // 0.5% (0.1 ~ 0.6)
-      if (r < 1.6) return MODEL_TYPES.find(m => m.id === 'gold_duck');  // 1.0% (0.6 ~ 1.6)
+      let cumulative = 0;
+
+      cumulative += clockChance;
+      if (r < cumulative) return MODEL_TYPES.find(m => m.id === 'gold_clock');
+
+      cumulative += towerChance;
+      if (r < cumulative) return MODEL_TYPES.find(m => m.id === 'gold_tower');
+
+      cumulative += houseChance;
+      if (r < cumulative) return MODEL_TYPES.find(m => m.id === 'gold_house');
+
+      cumulative += duckChance;
+      if (r < cumulative) return MODEL_TYPES.find(m => m.id === 'gold_duck');
+
       const normals = MODEL_TYPES.filter(m => m.rare === 0);
       return normals[Math.floor(Math.random() * normals.length)];
     }
@@ -269,13 +387,11 @@
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.25;
 
-    // 金属の反射をリアルにするプロシージャル環境マップ(PMREM)を生成
     function createStudioEnvMap() {
       const pmremGenerator = new THREE.PMREMGenerator(renderer);
       const envScene = new THREE.Scene();
       envScene.background = new THREE.Color(0x221a0a);
 
-      // スタジオの照明パネル（これが金の表面に反射してキラキラ輝く）
       const lightPanels = [
         { pos: [10, 15, 10], size: [12, 12], color: 0xffffff, intensity: 4 },
         { pos: [-12, 8, 8], size: [10, 15], color: 0xfff3c4, intensity: 3 },
@@ -297,7 +413,6 @@
     }
     scene.environment = createStudioEnvMap();
 
-    // ライティング
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
 
@@ -313,7 +428,6 @@
     rimLight.position.set(0, -5, 12);
     scene.add(rimLight);
 
-    // 鏡面反射する純金マテリアル
     function createGoldMaterial() {
       return new THREE.MeshStandardMaterial({
         color: 0xffcf40,
@@ -330,7 +444,7 @@
       const group = new THREE.Group();
       const goldMat = createGoldMaterial();
       const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
-      let radius = 0.65; // 当たり判定用の半径
+      let radius = 0.65;
 
       if (typeId === 'duck' || typeId === 'gold_duck') {
         const isGold = typeId === 'gold_duck';
@@ -409,12 +523,10 @@
         radius = 0.58;
 
       } else if (typeId === 'smile') {
-        // 立体的な球体のスマイルボール
         const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffd600, roughness: 0.2, metalness: 0.05 });
         const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.62, 32, 32), yellowMat);
         group.add(sphere);
 
-        // 球面に沿って配置された立体的な目
         const eyeGeo = new THREE.SphereGeometry(0.085, 16, 16);
         const eyeL = new THREE.Mesh(eyeGeo, blackMat);
         eyeL.scale.set(0.8, 1.3, 0.6);
@@ -426,7 +538,6 @@
         eyeR.rotation.set(-0.25, 0.3, 0);
         group.add(eyeL, eyeR);
 
-        // 球面に沿って立体的にカーブした笑顔の口
         const mouthCurve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(-0.28, -0.06, 0.55),
           new THREE.Vector3(-0.15, -0.22, 0.58),
@@ -453,8 +564,6 @@
         radius = 0.65;
 
       } else if (typeId === 'gold_tower') {
-        // 超レア0.1%：金の東京タワー
-        // 4本の脚部トラス構造
         const legPositions = [[-0.32, -0.32], [0.32, -0.32], [-0.32, 0.32], [0.32, 0.32]];
         legPositions.forEach(([lx, lz]) => {
           const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.12, 0.85, 8), goldMat);
@@ -464,45 +573,91 @@
           group.add(leg);
         });
 
-        // 下部メインタワー
         const lowerBody = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.45, 0.8, 4), goldMat);
         lowerBody.rotation.y = Math.PI / 4;
         lowerBody.position.y = -0.45;
         group.add(lowerBody);
 
-        // 大展望台（メインデッキ）
         const mainDeck = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.16, 0.52), goldMat);
         mainDeck.position.y = -0.02;
         group.add(mainDeck);
 
-        // 上部タワー
         const upperBody = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.22, 0.75, 4), goldMat);
         upperBody.rotation.y = Math.PI / 4;
         upperBody.position.y = 0.42;
         group.add(upperBody);
 
-        // 特別展望台（トップデッキ）
         const topDeck = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.12, 0.28), goldMat);
         topDeck.position.y = 0.82;
         group.add(topDeck);
 
-        // 先端アンテナ
         const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.05, 0.55, 8), goldMat);
         antenna.position.y = 1.15;
         group.add(antenna);
 
         radius = 0.78;
+
+      } else if (typeId === 'gold_clock') {
+        // 超レア0.05%：金の時計（懐中時計・置時計風）
+        const caseMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.22, 32), goldMat);
+        caseMesh.rotation.x = Math.PI / 2;
+        group.add(caseMesh);
+
+        // 文字盤（少し明るめのシャンパンゴールド）
+        const dialMat = new THREE.MeshStandardMaterial({
+          color: 0xfff3b0,
+          metalness: 0.85,
+          roughness: 0.2,
+          envMapIntensity: 1.4
+        });
+        const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.24, 32), dialMat);
+        dial.rotation.x = Math.PI / 2;
+        group.add(dial);
+
+        // 12時・3時・6時・9時の目盛り
+        for (let k = 0; k < 4; k++) {
+          const angle = (k * Math.PI) / 2;
+          const marker = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.09, 0.03), blackMat);
+          marker.position.set(Math.sin(angle) * 0.38, Math.cos(angle) * 0.38, 0.125);
+          marker.rotation.z = -angle;
+          group.add(marker);
+        }
+
+        // 長針・短針・中心軸
+        const hourHand = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.24, 0.03), blackMat);
+        hourHand.position.set(0.08, 0.08, 0.135);
+        hourHand.rotation.z = -Math.PI / 4;
+        group.add(hourHand);
+
+        const minuteHand = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.34, 0.03), blackMat);
+        minuteHand.position.set(0.12, 0.1, 0.14);
+        minuteHand.rotation.z = -Math.PI / 3;
+        group.add(minuteHand);
+
+        const centerPin = new THREE.Mesh(new THREE.SphereGeometry(0.04, 12, 12), goldMat);
+        centerPin.position.z = 0.145;
+        group.add(centerPin);
+
+        // 上部のリューズ（つまみ）とリング
+        const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.16, 16), goldMat);
+        crown.position.set(0, 0.65, 0);
+        group.add(crown);
+
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.025, 12, 24), goldMat);
+        ring.position.set(0, 0.78, 0);
+        group.add(ring);
+
+        radius = 0.68;
       }
 
       const targetScale = 0.88;
       group.scale.set(0.01, 0.01, 0.01);
 
-      // 自前物理演算用のデータ
       group.userData = {
         targetScale: targetScale,
         radius: radius * targetScale,
         vx: (Math.random() - 0.5) * 3.0,
-        vy: 2.0, // 出現時に少し上へポップしてから落下
+        vy: 2.0,
         rotVx: (Math.random() - 0.5) * 3.0,
         rotVy: (Math.random() - 0.5) * 4.0,
         rotVz: (Math.random() - 0.5) * 3.0,
@@ -519,7 +674,9 @@
       modelInfo.count++;
       updatePokedexUI();
 
-      if (modelInfo.rare === 2) {
+      if (modelInfo.id === 'gold_clock') {
+        showNotification(`⌚ 驚異の0.05%！「${modelInfo.name}」出現！！ ⌚`, true);
+      } else if (modelInfo.rare === 2) {
         showNotification(`👑 奇跡の0.1%！「${modelInfo.name}」降臨！！ 👑`, true);
       } else if (modelInfo.rare === 1) {
         showNotification(`✨ 超レア！「${modelInfo.name}」出現！ ✨`, false);
@@ -545,42 +702,36 @@
     // 4. 確実・高速な物理演算エンジン（重力・地面・モデル同士の衝突）
     // ==========================================
     function updatePhysics(dt) {
-      // カメラのZ=0平面での表示範囲を計算
       const vFov = (camera.fov * Math.PI) / 180;
       const halfH = Math.tan(vFov / 2) * camera.position.z;
       const halfW = halfH * camera.aspect;
 
-      const gravity = -22.0;      // 重力加速度
-      const restitution = 0.45;   // バウンド反発係数
-      const floorFriction = 0.92; // 地面との摩擦
+      const gravity = -22.0;
+      const restitution = 0.45;
+      const floorFriction = 0.92;
 
-      // 1. 重力・速度・壁＆透明な地面との衝突処理
       for (let i = 0; i < spawnedObjects.length; i++) {
         const obj = spawnedObjects[i];
         const p = obj.userData;
 
         if (p.isGrabbed) continue;
 
-        // 重力を適用して落下させる
         p.vy += gravity * dt;
 
-        // 位置の更新
         obj.position.x += p.vx * dt;
         obj.position.y += p.vy * dt;
-        obj.position.z = 0; // 2D平面上で確実にぶつかるようZを固定
+        obj.position.z = 0;
 
-        // 回転の更新
         obj.rotation.x += p.rotVx * dt;
         obj.rotation.y += p.rotVy * dt;
         obj.rotation.z += p.rotVz * dt;
 
-        // 画面下の「透明な地面」との衝突判定
         const floorY = -halfH + p.radius;
         if (obj.position.y < floorY) {
           obj.position.y = floorY;
           if (p.vy < 0) {
             p.vy = -p.vy * restitution;
-            if (Math.abs(p.vy) < 0.8) p.vy = 0; // 微振動を止める
+            if (Math.abs(p.vy) < 0.8) p.vy = 0;
           }
           p.vx *= floorFriction;
           p.rotVx *= 0.85;
@@ -588,7 +739,6 @@
           p.rotVz *= 0.85;
         }
 
-        // 左右の画面端との衝突判定（転がり落ち防止）
         const leftX = -halfW + p.radius;
         const rightX = halfW - p.radius;
         if (obj.position.x < leftX) {
@@ -600,7 +750,6 @@
         }
       }
 
-      // 2. モデル同士の衝突解決（反復処理で積み重なりも安定化）
       const solverIterations = 4;
       for (let iter = 0; iter < solverIterations; iter++) {
         for (let i = 0; i < spawnedObjects.length; i++) {
@@ -621,7 +770,6 @@
               const ny = dy / dist;
               const overlap = minDist - dist;
 
-              // めり込みの押し戻し
               if (pA.isGrabbed && !pB.isGrabbed) {
                 objB.position.x += nx * overlap;
                 objB.position.y += ny * overlap;
@@ -636,7 +784,6 @@
                 objB.position.y += ny * halfOverlap;
               }
 
-              // 衝突時の速度交換（反発）
               if (iter === 0) {
                 const rvx = pB.vx - pA.vx;
                 const rvy = pB.vy - pA.vy;
@@ -724,7 +871,6 @@
       const open = isHandOpen(landmarks);
       const pinch = isPinching(landmarks);
 
-      // 1. つまむ動作（掴んで持ち上げる・投げる）
       if (pinch) {
         handStateEl.innerText = '🤏 つまみ中 (モデル移動)';
         handStateEl.style.color = '#ff9800';
@@ -765,7 +911,6 @@
         releaseGrabbedObject();
       }
 
-      // 2. パー動作（モデル出現）
       if (open) {
         handStateEl.innerText = '✋ パー検知！';
         handStateEl.style.color = '#4caf50';
@@ -881,10 +1026,20 @@
       requestAnimationFrame(animate);
       const dt = Math.min(clock.getDelta(), 0.05);
 
-      // 物理演算の更新（落下・地面バウンド・モデル同士の衝突）
+      // 30秒ごとのレア確率倍率アップタイマー
+      if (multiplierStepIndex < MULTIPLIER_STEPS.length - 1) {
+        elapsedForMultiplier += dt;
+        if (elapsedForMultiplier >= 30) {
+          elapsedForMultiplier -= 30;
+          multiplierStepIndex++;
+          const newMult = getCurrentMultiplier();
+          showNotification(`🔥 レア確率が ${newMult}倍 にアップ！ 🔥`, newMult >= 8);
+        }
+        updateRateUI();
+      }
+
       updatePhysics(dt);
 
-      // スケールアニメーション更新
       spawnedObjects.forEach(obj => {
         const targetS = obj.userData.isGrabbed ? 1.05 : obj.userData.targetScale;
         obj.scale.lerp(new THREE.Vector3(targetS, targetS, targetS), 0.18);
