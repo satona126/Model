@@ -596,7 +596,6 @@
 
         // 0.001%「金のスマイル」専用の金のオーラ（後光＋半透明エネルギーシェル＋粒子）
         if (isGold) {
-          // 1. 常にカメラを向く輝く金のオーラスプライト
           const auraMat = new THREE.SpriteMaterial({
             map: getGoldAuraTexture(),
             color: 0xffe066,
@@ -609,7 +608,6 @@
           auraSprite.scale.set(2.5, 2.5, 1);
           group.add(auraSprite);
 
-          // 2. 周りを包む発光エネルギー球シェル
           const shellMat = new THREE.MeshBasicMaterial({
             color: 0xffd700,
             transparent: true,
@@ -620,7 +618,6 @@
           const auraShell = new THREE.Mesh(new THREE.SphereGeometry(0.84, 24, 24), shellMat);
           group.add(auraShell);
 
-          // 3. 周りを舞う金のオーラ粒子（パーティクル）
           const particleCount = 48;
           const pPositions = new Float32Array(particleCount * 3);
           for (let k = 0; k < particleCount; k++) {
@@ -751,7 +748,11 @@
       const targetScale = 0.88;
       group.scale.set(0.01, 0.01, 0.01);
 
+      const indestructible = (typeId === 'gold_clock' || typeId === 'gold_smile');
+
       group.userData = {
+        typeId: typeId,
+        indestructible: indestructible,
         targetScale: targetScale,
         radius: radius * targetScale,
         vx: (Math.random() - 0.5) * 3.0,
@@ -1068,7 +1069,11 @@
       if (beamActive) return;
       beamActive = true;
       beamProgress = 0;
-      grabbedObject = null;
+      if (grabbedObject && grabbedObject.userData.indestructible) {
+        // 消えないモデルを掴んでいる場合はそのまま維持
+      } else {
+        grabbedObject = null;
+      }
     });
 
     function updateAndDrawBeam() {
@@ -1099,12 +1104,16 @@
       bCtx.fillRect(beamX - 25, 0, 50, h);
       bCtx.shadowBlur = 0;
 
+      // 金の時計・金のスマイル以外のモデルを削除
       for (let i = spawnedObjects.length - 1; i >= 0; i--) {
         const obj = spawnedObjects[i];
+        if (obj.userData.indestructible) continue;
+
         const proj = obj.position.clone().project(camera);
         const screenX = (proj.x * 0.5 + 0.5) * w;
 
         if (screenX <= beamX) {
+          if (grabbedObject === obj) grabbedObject = null;
           scene.remove(obj);
           spawnedObjects.splice(i, 1);
         }
@@ -1112,8 +1121,13 @@
 
       if (beamProgress >= 1.1) {
         beamActive = false;
-        while (spawnedObjects.length > 0) {
-          scene.remove(spawnedObjects.pop());
+        for (let i = spawnedObjects.length - 1; i >= 0; i--) {
+          const obj = spawnedObjects[i];
+          if (!obj.userData.indestructible) {
+            if (grabbedObject === obj) grabbedObject = null;
+            scene.remove(obj);
+            spawnedObjects.splice(i, 1);
+          }
         }
       }
     }
