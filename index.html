@@ -232,13 +232,12 @@
   </style>
   <!-- Three.js & MediaPipe Hands -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <div id="container">
     <div id="loading">カメラとAIモデルを読み込み中...</div>
-    <video id="webcam" autoplay playsinline></video>
+    <video id="webcam" autoplay playsinline muted></video>
     <canvas id="three-canvas"></canvas>
     <canvas id="beam-canvas"></canvas>
 
@@ -594,7 +593,6 @@
         group.add(mouth);
         radius = 0.62;
 
-        // 0.001%「金のスマイル」専用の金のオーラ（後光＋半透明エネルギーシェル＋粒子）
         if (isGold) {
           const auraMat = new THREE.SpriteMaterial({
             map: getGoldAuraTexture(),
@@ -912,7 +910,7 @@
     }
 
     // ==========================================
-    // 5. 手のジェスチャー認識 (MediaPipe Hands)
+    // 5. 手のジェスチャー認識 (MediaPipe Hands + 自己復旧カメラループ)
     // ==========================================
     const videoElement = document.getElementById('webcam');
     const handStateEl = document.getElementById('hand-state');
@@ -927,6 +925,7 @@
       return Math.hypot(p1.x - p2.x, p1.y - p2.y);
     }
 
+    // 少し緩めで安定したパー判定（手首から指先までの距離比率＋指先同士の広がり）
     function isHandOpen(landmarks) {
       const wrist = landmarks[0];
       const fingerTips = [8, 12, 16, 20];
@@ -934,18 +933,18 @@
       let extendedCount = 0;
 
       for (let i = 0; i < 4; i++) {
-        if (dist2D(wrist, landmarks[fingerTips[i]]) > dist2D(wrist, landmarks[fingerPips[i]]) * 1.15) {
+        if (dist2D(wrist, landmarks[fingerTips[i]]) > dist2D(wrist, landmarks[fingerPips[i]]) * 1.08) {
           extendedCount++;
         }
       }
-      const thumbExtended = dist2D(landmarks[4], landmarks[17]) > dist2D(landmarks[2], landmarks[17]) * 1.1;
+      const thumbExtended = dist2D(landmarks[4], landmarks[17]) > dist2D(landmarks[2], landmarks[17]) * 1.02;
       return extendedCount >= 4 && thumbExtended;
     }
 
     function isPinching(landmarks) {
       const pinchDist = dist2D(landmarks[4], landmarks[8]);
       const handSize = dist2D(landmarks[0], landmarks[9]);
-      return pinchDist < handSize * 0.35;
+      return pinchDist < handSize * 0.36;
     }
 
     function releaseGrabbedObject() {
@@ -1018,7 +1017,8 @@
         handStateEl.style.color = '#4caf50';
 
         const now = Date.now();
-        if (!wasOpenHand || (now - lastSpawnTime > 1000)) {
+        // 連続生成クールダウンを少し短縮（750ms）して取りこぼしを防止
+        if (!wasOpenHand || (now - lastSpawnTime > 750)) {
           const palmX = (landmarks[0].x + landmarks[9].x) / 2;
           const palmY = (landmarks[0].y + landmarks[9].y) / 2;
           const worldPos = normalizedToWorld(palmX, palmY);
@@ -1040,19 +1040,62 @@
     hands.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,
-      minDetectionConfidence: 0.65,
-      minTrackingConfidence: 0.65
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
     });
     hands.onResults(onResults);
 
-    const cameraUtils = new Camera(videoElement, {
-      onFrame: async () => {
-        await hands.send({ image: videoElement });
-      },
-      width: 1280,
-      height: 720
-    });
-    cameraUtils.start();
+    // 途中で推論が詰まったりストリームが途切れたりしても自動復旧するループ
+    let isSendingFrame = false;
+    let lastProcessedFrameTime = Date.now();
+
+    async function initWebcamAndLoop() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+          audio: false
+        });
+        videoElement.srcObject = stream;
+        await videoElement.play();
+
+        // ストリームが途中で終了した場合の自動再起動
+        const tracks = stream.getVideoTracks();
+        if (tracks.length > 0) {
+          tracks[0].addEventListener('ended', () => {
+            setTimeout(initWebcamAndLoop, 500);
+          });
+        }
+      } catch (err) {
+        document.getElementById('loading').innerText = 'カメラにアクセスできません。権限を確認してください。';
+        return;
+      }
+
+      async function processVideoFrame() {
+        const now = Date.now();
+        // 万が一 isSendingFrame が5秒以上張り付いた場合はリセットして復旧
+        if (isSendingFrame && now - lastProcessedFrameTime > 5000) {
+          isSendingFrame = false;
+        }
+
+        if (!isSendingFrame && videoElement.readyState >= 2 && videoElement.videoWidth > 0) {
+          isSendingFrame = true;
+          lastProcessedFrameTime = now;
+          try {
+            await hands.send({ image: videoElement });
+          } catch (e) {
+            // 推論エラー時もループを止めずに継続
+          } finally {
+            isSendingFrame = false;
+            lastProcessedFrameTime = Date.now();
+          }
+        }
+        requestAnimationFrame(processVideoFrame);
+      }
+
+      requestAnimationFrame(processVideoFrame);
+    }
+
+    initWebcamAndLoop();
 
     // ==========================================
     // 6. 全削除ビームエフェクト & 削除処理
@@ -1104,7 +1147,6 @@
       bCtx.fillRect(beamX - 25, 0, 50, h);
       bCtx.shadowBlur = 0;
 
-      // 金の時計・金のスマイル以外のモデルを削除
       for (let i = spawnedObjects.length - 1; i >= 0; i--) {
         const obj = spawnedObjects[i];
         if (obj.userData.indestructible) continue;
@@ -1142,7 +1184,6 @@
       const dt = Math.min(clock.getDelta(), 0.05);
       const elapsed = clock.getElapsedTime();
 
-      // 20秒ごとのレア確率倍率アップタイマー
       if (multiplierStepIndex < MULTIPLIER_STEPS.length - 1) {
         elapsedForMultiplier += dt;
         if (elapsedForMultiplier >= STEP_INTERVAL) {
@@ -1161,7 +1202,6 @@
         const targetS = obj.userData.isGrabbed ? 1.05 : obj.userData.targetScale;
         obj.scale.lerp(new THREE.Vector3(targetS, targetS, targetS), 0.18);
 
-        // 金のスマイルの金のオーラアニメーション
         if (obj.userData.aura) {
           const aura = obj.userData.aura;
           const pulse = Math.sin(elapsed * 5 + aura.phase);
