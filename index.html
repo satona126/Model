@@ -16,7 +16,6 @@
       width: 100vw;
       height: 100vh;
     }
-    /* カメラ映像とキャンバスを鏡像反転して重ねる */
     #webcam {
       position: absolute;
       top: 0;
@@ -45,7 +44,6 @@
       z-index: 3;
       pointer-events: none;
     }
-    /* UIパネル */
     #ui-layer {
       position: absolute;
       top: 0;
@@ -65,7 +63,6 @@
       padding: 15px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     }
-    /* 図鑑パネル */
     #pokedex {
       position: absolute;
       top: 20px;
@@ -101,7 +98,6 @@
       color: #ffd700;
       font-weight: bold;
     }
-    /* 操作ガイド・ステータス */
     #status-box {
       position: absolute;
       bottom: 20px;
@@ -109,7 +105,6 @@
       font-size: 13px;
       line-height: 1.6;
     }
-    /* 全削除ボタン */
     #clear-btn {
       position: absolute;
       top: 20px;
@@ -133,7 +128,6 @@
     #clear-btn:active {
       transform: scale(0.95);
     }
-    /* レア出現時の通知バナー */
     #notification {
       position: absolute;
       top: 20%;
@@ -166,8 +160,9 @@
       border-radius: 10px;
     }
   </style>
-  <!-- Three.js & MediaPipe Hands -->
+  <!-- Three.js, Cannon-es (物理演算), MediaPipe Hands -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
@@ -189,8 +184,8 @@
       <div id="notification">✨ RARE GET! ✨</div>
 
       <div id="status-box" class="panel">
-        <div>✋ <b>パー</b>：手のひらから3Dモデル出現</div>
-        <div>🤏 <b>つまむ (親指＋人差し指)</b>：モデルを掴んで移動</div>
+        <div>✋ <b>パー</b>：手のひらから3Dモデル出現＆落下</div>
+        <div>🤏 <b>つまむ</b>：モデルを掴んで持ち上げる・投げる</div>
         <div>状態: <span id="hand-state" style="color:#4caf50; font-weight:bold;">待機中</span></div>
       </div>
     </div>
@@ -238,17 +233,16 @@
       setTimeout(() => el.classList.remove('show'), 2500);
     }
 
-    // 確率抽選ロジック
     function rollModelType() {
       const r = Math.random() * 100;
-      if (r < 0.5) return MODEL_TYPES.find(m => m.id === 'gold_house'); // 0.5%
-      if (r < 1.5) return MODEL_TYPES.find(m => m.id === 'gold_duck');  // 1.0% (0.5 ~ 1.5)
+      if (r < 0.5) return MODEL_TYPES.find(m => m.id === 'gold_house');
+      if (r < 1.5) return MODEL_TYPES.find(m => m.id === 'gold_duck');
       const normals = MODEL_TYPES.filter(m => !m.rare);
       return normals[Math.floor(Math.random() * normals.length)];
     }
 
     // ==========================================
-    // 2. Three.js セットアップ & 3Dモデル生成
+    // 2. Three.js & Cannon.js (物理演算) セットアップ
     // ==========================================
     const threeCanvas = document.getElementById('three-canvas');
     const scene = new THREE.Scene();
@@ -269,67 +263,124 @@
     pointLight.position.set(-5, -5, 5);
     scene.add(pointLight);
 
-    // プロシージャル3Dモデルビルダー
+    // 物理ワールドの初期化
+    const world = new CANNON.World();
+    world.gravity.set(0, -14, 0); // 重力設定
+    world.broadphase = new CANNON.NaiveBroadphase();
+    world.solver.iterations = 10;
+
+    // 物理マテリアル（反発係数と摩擦）
+    const defaultPhysMat = new CANNON.Material('default');
+    const contactMat = new CANNON.ContactMaterial(defaultPhysMat, defaultPhysMat, {
+      friction: 0.4,
+      restitution: 0.45 // 適度に弾む
+    });
+    world.addContactMaterial(contactMat);
+
+    // 画面の境界（透明な地面・左右の壁・前後の見えない壁）を計算して配置
+    let groundBody, leftWallBody, rightWallBody, frontWallBody, backWallBody;
+
+    function setupBoundaries() {
+      // 既存の壁があれば削除
+      [groundBody, leftWallBody, rightWallBody, frontWallBody, backWallBody].forEach(b => {
+        if (b) world.removeBody(b);
+      });
+
+      // Z=0平面でのカメラの可視範囲を計算
+      const vFov = (camera.fov * Math.PI) / 180;
+      const visibleHeight = 2 * Math.tan(vFov / 2) * camera.position.z;
+      const visibleWidth = visibleHeight * camera.aspect;
+
+      // 1. 画面下端の透明な地面
+      groundBody = new CANNON.Body({ mass: 0, material: defaultPhysMat });
+      groundBody.addShape(new CANNON.Plane());
+      groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+      groundBody.position.set(0, -visibleHeight / 2, 0);
+      world.addBody(groundBody);
+
+      // 2. 左の壁（画面外に転がり落ちないように）
+      leftWallBody = new CANNON.Body({ mass: 0, material: defaultPhysMat });
+      leftWallBody.addShape(new CANNON.Plane());
+      leftWallBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), Math.PI / 2);
+      leftWallBody.position.set(-visibleWidth / 2, 0, 0);
+      world.addBody(leftWallBody);
+
+      // 3. 右の壁
+      rightWallBody = new CANNON.Body({ mass: 0, material: defaultPhysMat });
+      rightWallBody.addShape(new CANNON.Plane());
+      rightWallBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), -Math.PI / 2);
+      rightWallBody.position.set(visibleWidth / 2, 0, 0);
+      world.addBody(rightWallBody);
+
+      // 4. 奥と手前の見えない壁（2D画面の奥行きから外れないように制限）
+      backWallBody = new CANNON.Body({ mass: 0, material: defaultPhysMat });
+      backWallBody.addShape(new CANNON.Plane());
+      backWallBody.position.set(0, 0, -1.5);
+      world.addBody(backWallBody);
+
+      frontWallBody = new CANNON.Body({ mass: 0, material: defaultPhysMat });
+      frontWallBody.addShape(new CANNON.Plane());
+      frontWallBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), Math.PI);
+      frontWallBody.position.set(0, 0, 1.5);
+      world.addBody(frontWallBody);
+    }
+    setupBoundaries();
+
+    // 3Dモデル＆物理ボディ生成
     function create3DModel(typeId) {
       const group = new THREE.Group();
       const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.85, roughness: 0.15 });
       const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+      let physShape;
 
       if (typeId === 'duck' || typeId === 'gold_duck') {
         const isGold = typeId === 'gold_duck';
         const bodyMat = isGold ? goldMat : new THREE.MeshStandardMaterial({ color: 0xffeb3b, roughness: 0.3 });
         const beakMat = isGold ? goldMat : new THREE.MeshStandardMaterial({ color: 0xff9800 });
 
-        // 体
         const body = new THREE.Mesh(new THREE.SphereGeometry(0.6, 20, 20), bodyMat);
         body.scale.set(1.2, 0.9, 0.9);
         group.add(body);
-        // 頭
         const head = new THREE.Mesh(new THREE.SphereGeometry(0.4, 20, 20), bodyMat);
         head.position.set(0.45, 0.55, 0);
         group.add(head);
-        // くちばし
         const beak = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.4, 16), beakMat);
         beak.rotation.z = -Math.PI / 2;
         beak.position.set(0.85, 0.5, 0);
         group.add(beak);
-        // 目
         const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), blackMat);
         eyeL.position.set(0.65, 0.68, 0.25);
         const eyeR = eyeL.clone();
         eyeR.position.z = -0.25;
         group.add(eyeL, eyeR);
 
+        physShape = new CANNON.Sphere(0.62);
+
       } else if (typeId === 'plane') {
         const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
         const blueMat = new THREE.MeshStandardMaterial({ color: 0x2196f3 });
-        // 胴体
         const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 1.6, 16), whiteMat);
         body.rotation.z = Math.PI / 2;
         group.add(body);
-        // 機首
         const nose = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), blueMat);
         nose.position.x = 0.8;
         group.add(nose);
-        // 主翼
         const wing = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 1.8), blueMat);
         wing.position.set(0.1, 0, 0);
         group.add(wing);
-        // 尾翼
         const tail = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.05), blueMat);
         tail.position.set(-0.65, 0.25, 0);
         group.add(tail);
 
+        physShape = new CANNON.Box(new CANNON.Vec3(0.75, 0.25, 0.75));
+
       } else if (typeId === 'train') {
         const greenMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
         const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffeb3b });
-        // 車体
         const body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.65, 0.6), greenMat);
         group.add(body);
-        // 帯
         const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.15, 0.62), yellowMat);
         group.add(stripe);
-        // 車輪
         for (let x of [-0.5, 0, 0.5]) {
           for (let z of [-0.32, 0.32]) {
             const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.08, 16), blackMat);
@@ -339,73 +390,86 @@
           }
         }
 
+        physShape = new CANNON.Box(new CANNON.Vec3(0.7, 0.35, 0.28));
+
       } else if (typeId === 'monkey') {
         const brownMat = new THREE.MeshStandardMaterial({ color: 0x795548 });
         const skinMat = new THREE.MeshStandardMaterial({ color: 0xffccbc });
-        // 頭
         const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 20, 20), brownMat);
         group.add(head);
-        // 顔パーツ
         const face = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 16), skinMat);
         face.position.set(0, -0.05, 0.22);
         group.add(face);
-        // 耳
         const earL = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), brownMat);
         earL.position.set(-0.58, 0.05, 0);
         const earR = earL.clone();
         earR.position.x = 0.58;
         group.add(earL, earR);
-        // 目
         const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), blackMat);
         eyeL.position.set(-0.15, 0.1, 0.6);
         const eyeR = eyeL.clone();
         eyeR.position.x = 0.15;
         group.add(eyeL, eyeR);
 
+        physShape = new CANNON.Sphere(0.52);
+
       } else if (typeId === 'smile') {
         const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffd600, roughness: 0.2 });
-        // 丸い顔
         const face = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.25, 32), yellowMat);
         face.rotation.x = Math.PI / 2;
         group.add(face);
-        // 目
         const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 12), blackMat);
         eyeL.position.set(-0.22, 0.2, 0.13);
         const eyeR = eyeL.clone();
         eyeR.position.x = 0.22;
         group.add(eyeL, eyeR);
-        // 口（スマイルの弧）
         const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.05, 12, 24, Math.PI), blackMat);
         mouth.rotation.z = Math.PI;
         mouth.position.set(0, 0.02, 0.13);
         group.add(mouth);
 
+        physShape = new CANNON.Sphere(0.55);
+
       } else if (typeId === 'gold_house') {
-        // 土台
         const base = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.9), goldMat);
         base.position.y = -0.15;
         group.add(base);
-        // 屋根
         const roof = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.6, 4), goldMat);
         roof.rotation.y = Math.PI / 4;
         roof.position.y = 0.5;
         group.add(roof);
-        // 煙突
         const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.4, 0.18), goldMat);
         chimney.position.set(0.25, 0.5, 0.1);
         group.add(chimney);
+
+        physShape = new CANNON.Box(new CANNON.Vec3(0.45, 0.55, 0.45));
       }
 
-      // スケールアニメーション用の初期設定
+      const targetScale = 0.85;
       group.scale.set(0.01, 0.01, 0.01);
+
+      // 物理ボディの作成
+      const body = new CANNON.Body({
+        mass: 1.5,
+        material: defaultPhysMat,
+        linearDamping: 0.1,
+        angularDamping: 0.2
+      });
+      body.addShape(physShape);
+      // 出現時に少しだけランダムな回転速度を与える
+      body.angularVelocity.set(
+        (Math.random() - 0.5) * 4,
+        (Math.random() - 0.5) * 4,
+        (Math.random() - 0.5) * 4
+      );
+
       group.userData = {
-        targetScale: 0.85,
-        rotSpeed: (Math.random() - 0.5) * 0.03 + 0.015,
-        floatOffset: Math.random() * Math.PI * 2,
-        isGrabbed: false
+        targetScale: targetScale,
+        isGrabbed: false,
+        body: body
       };
 
-      return group;
+      return { mesh: group, body: body };
     }
 
     const spawnedObjects = [];
@@ -419,15 +483,16 @@
         showNotification(`✨ 超レア！「${modelInfo.name}」出現！ ✨`);
       }
 
-      const mesh = create3DModel(modelInfo.id);
+      const { mesh, body } = create3DModel(modelInfo.id);
       mesh.position.copy(worldPos);
+      body.position.set(worldPos.x, worldPos.y, 0);
+
       scene.add(mesh);
+      world.addBody(body);
       spawnedObjects.push(mesh);
     }
 
-    // 画面正規化座標(0~1)をThree.jsのワールド座標(Z=0平面)に変換
     function normalizedToWorld(nx, ny) {
-      // ビデオが鏡像反転(scaleX(-1))されているためXを反転
       const ndcX = (1 - nx) * 2 - 1;
       const ndcY = -(ny * 2 - 1);
       const vec = new THREE.Vector3(ndcX, ndcY, 0.5);
@@ -446,13 +511,13 @@
     let lastSpawnTime = 0;
     let wasOpenHand = false;
     let grabbedObject = null;
+    let prevPinchPos = null;
+    let throwVelocity = new THREE.Vector3();
 
-    // 距離計算ヘルパー
     function dist2D(p1, p2) {
       return Math.hypot(p1.x - p2.x, p1.y - p2.y);
     }
 
-    // パー判定（4本の指が伸びているか）
     function isHandOpen(landmarks) {
       const wrist = landmarks[0];
       const fingerTips = [8, 12, 16, 20];
@@ -464,16 +529,28 @@
           extendedCount++;
         }
       }
-      // 親指も開いているか
       const thumbExtended = dist2D(landmarks[4], landmarks[17]) > dist2D(landmarks[2], landmarks[17]) * 1.1;
       return extendedCount >= 4 && thumbExtended;
     }
 
-    // つまむ判定（親指先端[4]と人差し指先端[8]が近いか）
     function isPinching(landmarks) {
       const pinchDist = dist2D(landmarks[4], landmarks[8]);
-      const handSize = dist2D(landmarks[0], landmarks[9]); // 手首から中指付け根までの基準サイズ
+      const handSize = dist2D(landmarks[0], landmarks[9]);
       return pinchDist < handSize * 0.35;
+    }
+
+    function releaseGrabbedObject() {
+      if (!grabbedObject) return;
+      const body = grabbedObject.userData.body;
+      grabbedObject.userData.isGrabbed = false;
+      // 掴んでいた時の手の移動速度をそのまま投げる力として与える
+      body.velocity.set(
+        Math.max(-25, Math.min(25, throwVelocity.x * 35)),
+        Math.max(-25, Math.min(25, throwVelocity.y * 35)),
+        0
+      );
+      grabbedObject = null;
+      prevPinchPos = null;
     }
 
     function onResults(results) {
@@ -483,10 +560,7 @@
         handStateEl.innerText = '手を検知していません';
         handStateEl.style.color = '#aaa';
         wasOpenHand = false;
-        if (grabbedObject) {
-          grabbedObject.userData.isGrabbed = false;
-          grabbedObject = null;
-        }
+        releaseGrabbedObject();
         return;
       }
 
@@ -494,20 +568,19 @@
       const open = isHandOpen(landmarks);
       const pinch = isPinching(landmarks);
 
-      // 1. つまむ動作（掴む・移動）
+      // 1. つまむ動作（物理ボディを掴んで移動・投げ）
       if (pinch) {
         handStateEl.innerText = '🤏 つまみ中 (モデル移動)';
         handStateEl.style.color = '#ff9800';
         wasOpenHand = false;
 
-        // 親指と人差し指の中間点
         const midX = (landmarks[4].x + landmarks[8].x) / 2;
         const midY = (landmarks[4].y + landmarks[8].y) / 2;
         const pinchWorldPos = normalizedToWorld(midX, midY);
+        pinchWorldPos.z = 0;
 
         if (!grabbedObject) {
-          // 一番近いモデルを探す
-          let minDist = 1.8; // 掴める判定半径
+          let minDist = 1.8;
           for (let obj of spawnedObjects) {
             const d = obj.position.distanceTo(pinchWorldPos);
             if (d < minDist) {
@@ -515,18 +588,29 @@
               grabbedObject = obj;
             }
           }
+          if (grabbedObject) {
+            prevPinchPos = pinchWorldPos.clone();
+            throwVelocity.set(0, 0, 0);
+          }
         }
 
         if (grabbedObject) {
           grabbedObject.userData.isGrabbed = true;
-          grabbedObject.position.lerp(pinchWorldPos, 0.4); // スムーズに追従
+          const body = grabbedObject.userData.body;
+
+          if (prevPinchPos) {
+            throwVelocity.subVectors(pinchWorldPos, prevPinchPos);
+            prevPinchPos.copy(pinchWorldPos);
+          }
+
+          // 掴んでいる間は重力を打ち消し、手の位置に追従させる
+          body.position.set(pinchWorldPos.x, pinchWorldPos.y, 0);
+          body.velocity.set(0, 0, 0);
+          body.angularVelocity.set(0, 0, 0);
         }
         return;
       } else {
-        if (grabbedObject) {
-          grabbedObject.userData.isGrabbed = false;
-          grabbedObject = null;
-        }
+        releaseGrabbedObject();
       }
 
       // 2. パー動作（モデル出現）
@@ -535,12 +619,11 @@
         handStateEl.style.color = '#4caf50';
 
         const now = Date.now();
-        // 手を開いた瞬間、または開き続けて1.2秒ごとに生成
         if (!wasOpenHand || (now - lastSpawnTime > 1200)) {
-          // 手のひらの中心（中指付け根[9]と手首[0]の中間）
           const palmX = (landmarks[0].x + landmarks[9].x) / 2;
           const palmY = (landmarks[0].y + landmarks[9].y) / 2;
           const worldPos = normalizedToWorld(palmX, palmY);
+          worldPos.z = 0;
 
           spawnModelAt(worldPos);
           lastSpawnTime = now;
@@ -591,24 +674,26 @@
       grabbedObject = null;
     });
 
+    function removeObject(obj, index) {
+      scene.remove(obj);
+      world.removeBody(obj.userData.body);
+      spawnedObjects.splice(index, 1);
+    }
+
     function updateAndDrawBeam() {
       bCtx.clearRect(0, 0, beamCanvas.width, beamCanvas.height);
       if (!beamActive) return;
 
-      beamProgress += 0.035; // ビームの進行速度
+      beamProgress += 0.035;
       const w = beamCanvas.width;
       const h = beamCanvas.height;
-
-      // 左から右へ薙ぎ払うレーザービーム
       const beamX = w * Math.min(beamProgress * 1.3, 1.2);
 
-      // 画面フラッシュ
       if (beamProgress < 0.3) {
         bCtx.fillStyle = `rgba(0, 229, 255, ${(0.3 - beamProgress) * 0.8})`;
         bCtx.fillRect(0, 0, w, h);
       }
 
-      // メインビーム描画
       const grad = bCtx.createLinearGradient(0, 0, beamX, 0);
       grad.addColorStop(0, 'rgba(0, 229, 255, 0.1)');
       grad.addColorStop(0.8, 'rgba(0, 229, 255, 0.8)');
@@ -617,54 +702,52 @@
       bCtx.fillStyle = grad;
       bCtx.fillRect(0, 0, beamX, h);
 
-      // 先端のエネルギーコア（縦の光の柱）
       bCtx.shadowBlur = 40;
       bCtx.shadowColor = '#00e5ff';
       bCtx.fillStyle = '#ffffff';
       bCtx.fillRect(beamX - 25, 0, 50, h);
       bCtx.shadowBlur = 0;
 
-      // ビームが通過した位置にある3Dモデルを消滅させる
       for (let i = spawnedObjects.length - 1; i >= 0; i--) {
         const obj = spawnedObjects[i];
-        // ワールド座標をスクリーンX座標に変換
         const proj = obj.position.clone().project(camera);
         const screenX = (proj.x * 0.5 + 0.5) * w;
 
         if (screenX <= beamX) {
-          scene.remove(obj);
-          spawnedObjects.splice(i, 1);
+          removeObject(obj, i);
         }
       }
 
       if (beamProgress >= 1.1) {
         beamActive = false;
-        // 念のため残りを全削除
         while (spawnedObjects.length > 0) {
-          scene.remove(spawnedObjects.pop());
+          removeObject(spawnedObjects[spawnedObjects.length - 1], spawnedObjects.length - 1);
         }
       }
     }
 
     // ==========================================
-    // 5. メインアニメーションループ & リサイズ対応
+    // 5. メインアニメーションループ & 物理ステップ
     // ==========================================
     const clock = new THREE.Clock();
 
     function animate() {
       requestAnimationFrame(animate);
-      const elapsed = clock.getElapsedTime();
+      const dt = Math.min(clock.getDelta(), 0.1);
+
+      // 物理エンジンを進める
+      world.step(1 / 60, dt, 3);
 
       spawnedObjects.forEach(obj => {
-        // 出現時のポップアップスケールアニメーション
-        const targetS = obj.userData.isGrabbed ? 1.15 : obj.userData.targetScale;
-        obj.scale.lerp(new THREE.Vector3(targetS, targetS, targetS), 0.15);
+        const body = obj.userData.body;
 
-        // 回転とふわふわ浮遊
-        obj.rotation.y += obj.userData.rotSpeed;
-        if (!obj.userData.isGrabbed) {
-          obj.position.y += Math.sin(elapsed * 2 + obj.userData.floatOffset) * 0.003;
-        }
+        // 出現・掴み時のスケールアニメーション
+        const targetS = obj.userData.isGrabbed ? 1.05 : obj.userData.targetScale;
+        obj.scale.lerp(new THREE.Vector3(targetS, targetS, targetS), 0.18);
+
+        // 物理ボディの位置と回転をThree.jsメッシュに同期
+        obj.position.copy(body.position);
+        obj.quaternion.copy(body.quaternion);
       });
 
       renderer.render(scene, camera);
@@ -678,6 +761,7 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
       beamCanvas.width = window.innerWidth;
       beamCanvas.height = window.innerHeight;
+      setupBoundaries(); // 画面サイズ変更時に透明な地面・壁の位置も再計算
     });
   </script>
 </body>
