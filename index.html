@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>3Dシュミレーション</title>
+  <title>AR Hand 3D Gacha & Collector (Physics & Gold Edition)</title>
   <style>
     body {
       margin: 0;
@@ -297,8 +297,16 @@
     let multiplierStepIndex = 0;
     let elapsedForMultiplier = 0;
 
+    // 1000倍到達後、30秒ごとにラッキーガチャが発動
+    const LUCKY_GACHA_INTERVAL = 30;
+    let elapsedForLuckyGacha = 0;
+
     function getCurrentMultiplier() {
       return MULTIPLIER_STEPS[multiplierStepIndex];
+    }
+
+    function isMaxMultiplierReached() {
+      return multiplierStepIndex >= MULTIPLIER_STEPS.length - 1;
     }
 
     function formatRateDisplay(baseRate) {
@@ -311,12 +319,13 @@
       const mult = getCurrentMultiplier();
       document.getElementById('rate-multiplier').innerText = `${mult}倍`;
       const timerEl = document.getElementById('rate-timer');
-      if (multiplierStepIndex >= MULTIPLIER_STEPS.length - 1) {
-        timerEl.innerText = '最大倍率 (1000倍) 到達！';
-      } else {
+      if (!isMaxMultiplierReached()) {
         const remaining = Math.max(0, Math.ceil(STEP_INTERVAL - elapsedForMultiplier));
         const nextMult = MULTIPLIER_STEPS[multiplierStepIndex + 1];
         timerEl.innerText = `次の${nextMult}倍まで: ${remaining}秒`;
+      } else {
+        const remainingLucky = Math.max(0, Math.ceil(LUCKY_GACHA_INTERVAL - elapsedForLuckyGacha));
+        timerEl.innerText = `🎰 ラッキーガチャまで: ${remainingLucky}秒`;
       }
     }
     updateRateUI();
@@ -352,6 +361,14 @@
         : 'linear-gradient(45deg, #f1c40f, #e67e22)';
       el.classList.add('show');
       setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    // ラッキーガチャ専用抽選（金の東京タワー 50%、金の時計 35%、金のスマイル 15%）
+    function rollLuckyGachaType() {
+      const r = Math.random() * 100;
+      if (r < 50) return MODEL_TYPES.find(m => m.id === 'gold_tower'); // 50%
+      if (r < 85) return MODEL_TYPES.find(m => m.id === 'gold_clock'); // 35% (50 ~ 85)
+      return MODEL_TYPES.find(m => m.id === 'gold_smile');             // 15% (85 ~ 100)
     }
 
     function rollModelType() {
@@ -767,8 +784,7 @@
 
     const spawnedObjects = [];
 
-    function spawnModelAt(worldPos) {
-      const modelInfo = rollModelType();
+    function spawnSpecificModelAt(modelInfo, worldPos) {
       modelInfo.count++;
       updatePokedexUI();
 
@@ -786,6 +802,23 @@
       mesh.position.set(worldPos.x, worldPos.y, 0);
       scene.add(mesh);
       spawnedObjects.push(mesh);
+    }
+
+    function spawnModelAt(worldPos) {
+      const modelInfo = rollModelType();
+      spawnSpecificModelAt(modelInfo, worldPos);
+    }
+
+    function triggerLuckyGacha() {
+      const modelInfo = rollLuckyGachaType();
+      const vFov = (camera.fov * Math.PI) / 180;
+      const halfH = Math.tan(vFov / 2) * camera.position.z;
+      const halfW = halfH * camera.aspect;
+      const randX = (Math.random() - 0.5) * halfW * 1.1;
+      const spawnY = Math.min(halfH * 0.65, 3.2);
+
+      spawnSpecificModelAt(modelInfo, new THREE.Vector3(randX, spawnY, 0));
+      showNotification(`🎰 ラッキーガチャ！「${modelInfo.name}」GET！！ 🎰`, true);
     }
 
     function normalizedToWorld(nx, ny) {
@@ -1177,7 +1210,7 @@
       const dt = Math.min(clock.getDelta(), 0.05);
       const elapsed = clock.getElapsedTime();
 
-      if (multiplierStepIndex < MULTIPLIER_STEPS.length - 1) {
+      if (!isMaxMultiplierReached()) {
         elapsedForMultiplier += dt;
         if (elapsedForMultiplier >= STEP_INTERVAL) {
           elapsedForMultiplier -= STEP_INTERVAL;
@@ -1185,6 +1218,14 @@
           const newMult = getCurrentMultiplier();
           showNotification(`🔥 レア確率が ${newMult}倍 にアップ！ 🔥`, newMult >= 10);
           updatePokedexUI();
+        }
+        updateRateUI();
+      } else {
+        // 1000倍到達後、30秒ごとにラッキーガチャを発動
+        elapsedForLuckyGacha += dt;
+        if (elapsedForLuckyGacha >= LUCKY_GACHA_INTERVAL) {
+          elapsedForLuckyGacha -= LUCKY_GACHA_INTERVAL;
+          triggerLuckyGacha();
         }
         updateRateUI();
       }
