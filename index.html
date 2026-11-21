@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>3Dシュミレーション</title>
+  <title>3Dシュミレーション Vr.1.0.2</title>
   <style>
     body {
       margin: 0;
@@ -55,7 +55,7 @@
     }
     .panel {
       pointer-events: auto;
-      background: rgba(20, 25, 35, 0.8);
+      background: rgba(20, 25, 35, 0.85);
       backdrop-filter: blur(8px);
       border: 1px solid rgba(255, 255, 255, 0.2);
       border-radius: 12px;
@@ -63,13 +63,18 @@
       padding: 15px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     }
-    /* 図鑑ボタン＆スライドパネル */
-    #pokedex-toggle-btn {
+    /* 上部左ボタン群（図鑑＆コード） */
+    #top-left-buttons {
       position: absolute;
       top: 20px;
       left: 20px;
+      display: flex;
+      gap: 10px;
+      z-index: 6;
+      pointer-events: none;
+    }
+    .top-btn {
       pointer-events: auto;
-      background: linear-gradient(135deg, #2196f3, #00bcd4);
       color: white;
       border: none;
       padding: 12px 20px;
@@ -77,17 +82,30 @@
       font-weight: bold;
       border-radius: 30px;
       cursor: pointer;
-      box-shadow: 0 4px 15px rgba(0, 188, 212, 0.5);
       transition: transform 0.1s, box-shadow 0.2s;
-      z-index: 6;
     }
-    #pokedex-toggle-btn:hover {
+    .top-btn:hover {
       transform: scale(1.05);
-      box-shadow: 0 6px 20px rgba(0, 188, 212, 0.8);
     }
-    #pokedex-toggle-btn:active {
+    .top-btn:active {
       transform: scale(0.95);
     }
+    #pokedex-toggle-btn {
+      background: linear-gradient(135deg, #2196f3, #00bcd4);
+      box-shadow: 0 4px 15px rgba(0, 188, 212, 0.5);
+    }
+    #pokedex-toggle-btn:hover {
+      box-shadow: 0 6px 20px rgba(0, 188, 212, 0.8);
+    }
+    #code-toggle-btn {
+      background: linear-gradient(135deg, #9c27b0, #e040fb);
+      box-shadow: 0 4px 15px rgba(224, 64, 251, 0.5);
+    }
+    #code-toggle-btn:hover {
+      box-shadow: 0 6px 20px rgba(224, 64, 251, 0.8);
+    }
+
+    /* 図鑑スライドパネル */
     #pokedex {
       position: absolute;
       top: 72px;
@@ -108,7 +126,7 @@
       z-index: 5;
     }
     #pokedex.open {
-      max-height: 560px;
+      max-height: 620px;
       opacity: 1;
       padding-top: 15px;
       padding-bottom: 15px;
@@ -151,6 +169,94 @@
       font-weight: bold;
       box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
     }
+    .dex-item.secret.unlocked {
+      background: linear-gradient(90deg, rgba(0, 188, 212, 0.35), rgba(156, 39, 176, 0.35));
+      border: 1px solid #80deea;
+      color: #e0f7fa;
+      font-weight: bold;
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+    }
+
+    /* コード入力モーダル画面 */
+    #code-modal {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.85);
+      width: 320px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+      z-index: 15;
+      text-align: center;
+    }
+    #code-modal.open {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+      pointer-events: auto;
+    }
+    #code-modal h3 {
+      margin: 0 0 12px 0;
+      font-size: 20px;
+      color: #f3e5f5;
+    }
+    #code-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      outline: none;
+      margin-bottom: 12px;
+      text-align: center;
+      user-select: text;
+    }
+    #code-input:focus {
+      border-color: #e040fb;
+      box-shadow: 0 0 12px rgba(224, 64, 251, 0.5);
+    }
+    .code-btn-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    #code-submit-btn {
+      flex: 1;
+      padding: 10px;
+      font-size: 15px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #9c27b0, #e040fb);
+      color: white;
+      cursor: pointer;
+    }
+    #code-submit-btn:hover {
+      filter: brightness(1.1);
+    }
+    #code-close-btn {
+      padding: 10px 16px;
+      font-size: 15px;
+      font-weight: bold;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.1);
+      color: white;
+      cursor: pointer;
+    }
+    #code-close-btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    #code-feedback {
+      margin-top: 10px;
+      font-size: 13px;
+      min-height: 18px;
+      color: #ff80ab;
+    }
+
     #status-box {
       position: absolute;
       bottom: 20px;
@@ -242,11 +348,25 @@
     <canvas id="beam-canvas"></canvas>
 
     <div id="ui-layer">
-      <button id="pokedex-toggle-btn">📖 図鑑</button>
+      <div id="top-left-buttons">
+        <button id="pokedex-toggle-btn" class="top-btn">📖 図鑑</button>
+        <button id="code-toggle-btn" class="top-btn">🔑 コード</button>
+      </div>
 
       <div id="pokedex" class="panel">
-        <h2>📖 3Dモデル図鑑 <span id="dex-count">0/10</span></h2>
+        <h2>📖 3Dモデル図鑑 <span id="dex-count">0/12</span></h2>
         <div id="dex-list"></div>
+      </div>
+
+      <!-- コード入力画面 -->
+      <div id="code-modal" class="panel">
+        <h3>🔑 シークレットコード入力</h3>
+        <input type="text" id="code-input" placeholder="コードを入力..." autocomplete="off" />
+        <div class="code-btn-row">
+          <button id="code-submit-btn">決定</button>
+          <button id="code-close-btn">閉じる</button>
+        </div>
+        <div id="code-feedback"></div>
       </div>
 
       <button id="clear-btn">⚡ 全削除ビーム</button>
@@ -272,16 +392,18 @@
     // 1. 図鑑とモデル定義
     // ==========================================
     const MODEL_TYPES = [
-      { id: 'duck', name: 'アヒル', baseRate: null, rare: 0, count: 0 },
-      { id: 'plane', name: '飛行機', baseRate: null, rare: 0, count: 0 },
-      { id: 'train', name: '電車', baseRate: null, rare: 0, count: 0 },
-      { id: 'monkey', name: '猿', baseRate: null, rare: 0, count: 0 },
-      { id: 'smile', name: '黄色い丸いスマイル', baseRate: null, rare: 0, count: 0 },
-      { id: 'gold_duck', name: '金のアヒル', baseRate: 1.0, rare: 1, count: 0 },
-      { id: 'gold_house', name: '金の家', baseRate: 0.5, rare: 1, count: 0 },
-      { id: 'gold_tower', name: '金の東京タワー', baseRate: 0.1, rare: 2, count: 0 },
-      { id: 'gold_clock', name: '金の時計', baseRate: 0.05, rare: 2, count: 0 },
-      { id: 'gold_smile', name: '金のスマイル', baseRate: 0.001, rare: 2, count: 0 }
+      { id: 'duck', name: 'アヒル', baseRate: null, rare: 0, secret: false, count: 0 },
+      { id: 'plane', name: '飛行機', baseRate: null, rare: 0, secret: false, count: 0 },
+      { id: 'train', name: '電車', baseRate: null, rare: 0, secret: false, count: 0 },
+      { id: 'monkey', name: '猿', baseRate: null, rare: 0, secret: false, count: 0 },
+      { id: 'smile', name: '黄色い丸いスマイル', baseRate: null, rare: 0, secret: false, count: 0 },
+      { id: 'gold_duck', name: '金のアヒル', baseRate: 1.0, rare: 1, secret: false, count: 0 },
+      { id: 'gold_house', name: '金の家', baseRate: 0.5, rare: 1, secret: false, count: 0 },
+      { id: 'gold_tower', name: '金の東京タワー', baseRate: 0.1, rare: 2, secret: false, count: 0 },
+      { id: 'gold_clock', name: '金の時計', baseRate: 0.05, rare: 2, secret: false, count: 0 },
+      { id: 'gold_smile', name: '金のスマイル', baseRate: 0.001, rare: 2, secret: false, count: 0 },
+      { id: 'polar_bear', name: '青いオーラのシロクマ', baseRate: null, rare: 2, secret: true, count: 0 },
+      { id: 'green_earth', name: '緑のオーラの地球', baseRate: null, rare: 2, secret: true, count: 0 }
     ];
 
     // 図鑑ボタンの開閉処理
@@ -289,6 +411,63 @@
     const pokedexPanel = document.getElementById('pokedex');
     pokedexBtn.addEventListener('click', () => {
       pokedexPanel.classList.toggle('open');
+    });
+
+    // コード画面の開閉＆入力処理
+    const codeToggleBtn = document.getElementById('code-toggle-btn');
+    const codeModal = document.getElementById('code-modal');
+    const codeInput = document.getElementById('code-input');
+    const codeSubmitBtn = document.getElementById('code-submit-btn');
+    const codeCloseBtn = document.getElementById('code-close-btn');
+    const codeFeedback = document.getElementById('code-feedback');
+
+    function openCodeModal() {
+      codeModal.classList.add('open');
+      codeFeedback.innerText = '';
+      codeInput.value = '';
+      setTimeout(() => codeInput.focus(), 50);
+    }
+
+    function closeCodeModal() {
+      codeModal.classList.remove('open');
+    }
+
+    codeToggleBtn.addEventListener('click', () => {
+      if (codeModal.classList.contains('open')) {
+        closeCodeModal();
+      } else {
+        openCodeModal();
+      }
+    });
+
+    codeCloseBtn.addEventListener('click', closeCodeModal);
+
+    function handleCodeSubmit() {
+      const val = codeInput.value.trim().toLowerCase();
+      if (!val) return;
+
+      if (val === 'honey') {
+        const bearInfo = MODEL_TYPES.find(m => m.id === 'polar_bear');
+        spawnSpecificModelAt(bearInfo, new THREE.Vector3(0, 2.2, 0));
+        showNotification('❄️🐻 青いオーラのシロクマ出現！ 🐻❄️', true);
+        closeCodeModal();
+      } else if (val === 'ramen') {
+        const earthInfo = MODEL_TYPES.find(m => m.id === 'green_earth');
+        spawnSpecificModelAt(earthInfo, new THREE.Vector3(0, 2.2, 0));
+        showNotification('🌍✨ 緑のオーラの地球出現！ ✨🌍', true);
+        closeCodeModal();
+      } else {
+        codeFeedback.innerText = '❌ コードが違います';
+      }
+    }
+
+    codeSubmitBtn.addEventListener('click', handleCodeSubmit);
+    codeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        handleCodeSubmit();
+      } else if (e.key === 'Escape') {
+        closeCodeModal();
+      }
     });
 
     // 20秒ごとにレア確率倍率が 1倍 → 2倍 → 4倍 → 8倍 → 10倍 → 20倍 → 50倍 → 100倍 → 200倍 → 500倍 → 750倍 → 1000倍 と上昇
@@ -309,9 +488,10 @@
       return multiplierStepIndex >= MULTIPLIER_STEPS.length - 1;
     }
 
-    function formatRateDisplay(baseRate) {
-      if (baseRate === null) return '通常';
-      const val = Math.min(100, baseRate * getCurrentMultiplier());
+    function formatRateDisplay(item) {
+      if (item.secret) return 'コード';
+      if (item.baseRate === null) return '通常';
+      const val = Math.min(100, item.baseRate * getCurrentMultiplier());
       return `${Number(val.toFixed(3))}%`;
     }
 
@@ -338,10 +518,14 @@
       MODEL_TYPES.forEach(item => {
         if (item.count > 0) unlockedCount++;
         const div = document.createElement('div');
-        let rareClass = item.rare === 2 ? 'super-rare' : (item.rare === 1 ? 'rare' : '');
+        let rareClass = item.secret ? 'secret' : (item.rare === 2 ? 'super-rare' : (item.rare === 1 ? 'rare' : ''));
         div.className = `dex-item ${item.count > 0 ? 'unlocked' : ''} ${rareClass}`;
-        const displayName = item.count > 0 ? item.name : '？？？';
-        const rateText = formatRateDisplay(item.baseRate);
+        // 未入手時は「？？？」。シロクマは指定通り解放後も「???」表記、地球は解放後に名前表示
+        let displayName = '？？？';
+        if (item.count > 0) {
+          displayName = item.id === 'polar_bear' ? '???' : item.name;
+        }
+        const rateText = formatRateDisplay(item);
         div.innerHTML = `
           <span>${displayName}</span>
           <span>${item.count > 0 ? `×${item.count} (${rateText})` : rateText}</span>
@@ -367,13 +551,12 @@
     function rollLuckyGachaType() {
       const r = Math.random() * 100;
       if (r < 50) return MODEL_TYPES.find(m => m.id === 'gold_tower'); // 50%
-      if (r < 85) return MODEL_TYPES.find(m => m.id === 'gold_clock'); // 35% (50 ~ 85)
-      return MODEL_TYPES.find(m => m.id === 'gold_smile');             // 15% (85 ~ 100)
+      if (r < 85) return MODEL_TYPES.find(m => m.id === 'gold_clock'); // 35%
+      return MODEL_TYPES.find(m => m.id === 'gold_smile');             // 15%
     }
 
     function rollModelType() {
       const mult = getCurrentMultiplier();
-      // 基礎確率（%）に現在の倍率を掛ける（合計が100%を超える場合はレア枠内で正規化）
       const rawSmile = 0.001 * mult;
       const rawClock = 0.05 * mult;
       const rawTower = 0.1 * mult;
@@ -406,12 +589,12 @@
       cumulative += duckChance;
       if (r < cumulative) return MODEL_TYPES.find(m => m.id === 'gold_duck');
 
-      const normals = MODEL_TYPES.filter(m => m.rare === 0);
+      const normals = MODEL_TYPES.filter(m => m.rare === 0 && !m.secret);
       return normals[Math.floor(Math.random() * normals.length)];
     }
 
     // ==========================================
-    // 2. Three.js & 光を反射する金環境マップ生成
+    // 2. Three.js & 環境マップ・オーラテクスチャ生成
     // ==========================================
     const threeCanvas = document.getElementById('three-canvas');
     const scene = new THREE.Scene();
@@ -474,23 +657,165 @@
       });
     }
 
-    // 金のオーラ用スプライトテクスチャ生成
-    let goldAuraTexture = null;
-    function getGoldAuraTexture() {
-      if (goldAuraTexture) return goldAuraTexture;
+    // 汎用ラジアルオーラテクスチャ生成（金・青・緑対応）
+    const auraTextureCache = {};
+    function getAuraTexture(colorKey) {
+      if (auraTextureCache[colorKey]) return auraTextureCache[colorKey];
       const canvas = document.createElement('canvas');
       canvas.width = 256;
       canvas.height = 256;
       const ctx = canvas.getContext('2d');
       const grad = ctx.createRadialGradient(128, 128, 12, 128, 128, 128);
-      grad.addColorStop(0, 'rgba(255, 250, 200, 1.0)');
-      grad.addColorStop(0.28, 'rgba(255, 215, 0, 0.85)');
-      grad.addColorStop(0.6, 'rgba(255, 170, 0, 0.35)');
-      grad.addColorStop(1, 'rgba(255, 140, 0, 0.0)');
+
+      if (colorKey === 'blue') {
+        grad.addColorStop(0, 'rgba(220, 248, 255, 1.0)');
+        grad.addColorStop(0.28, 'rgba(0, 195, 255, 0.85)');
+        grad.addColorStop(0.6, 'rgba(0, 110, 255, 0.35)');
+        grad.addColorStop(1, 'rgba(0, 80, 255, 0.0)');
+      } else if (colorKey === 'green') {
+        grad.addColorStop(0, 'rgba(225, 255, 230, 1.0)');
+        grad.addColorStop(0.28, 'rgba(0, 230, 118, 0.85)');
+        grad.addColorStop(0.6, 'rgba(0, 180, 75, 0.35)');
+        grad.addColorStop(1, 'rgba(0, 130, 50, 0.0)');
+      } else {
+        grad.addColorStop(0, 'rgba(255, 250, 200, 1.0)');
+        grad.addColorStop(0.28, 'rgba(255, 215, 0, 0.85)');
+        grad.addColorStop(0.6, 'rgba(255, 170, 0, 0.35)');
+        grad.addColorStop(1, 'rgba(255, 140, 0, 0.0)');
+      }
+
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 256, 256);
-      goldAuraTexture = new THREE.CanvasTexture(canvas);
-      return goldAuraTexture;
+      auraTextureCache[colorKey] = new THREE.CanvasTexture(canvas);
+      return auraTextureCache[colorKey];
+    }
+
+    function attachAuraToGroup(group, colorKey, shellRadius = 0.86) {
+      const tex = getAuraTexture(colorKey);
+      let spriteColor = 0xffe066;
+      let shellColor = 0xffd700;
+      let particleColor = 0xfff59d;
+
+      if (colorKey === 'blue') {
+        spriteColor = 0x40c4ff;
+        shellColor = 0x00b0ff;
+        particleColor = 0xb3e5fc;
+      } else if (colorKey === 'green') {
+        spriteColor = 0x69f0ae;
+        shellColor = 0x00e676;
+        particleColor = 0xb9f6ca;
+      }
+
+      const auraMat = new THREE.SpriteMaterial({
+        map: tex,
+        color: spriteColor,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const auraSprite = new THREE.Sprite(auraMat);
+      auraSprite.scale.set(2.6, 2.6, 1);
+      group.add(auraSprite);
+
+      const shellMat = new THREE.MeshBasicMaterial({
+        color: shellColor,
+        transparent: true,
+        opacity: 0.25,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const auraShell = new THREE.Mesh(new THREE.SphereGeometry(shellRadius, 24, 24), shellMat);
+      group.add(auraShell);
+
+      const particleCount = 48;
+      const pPositions = new Float32Array(particleCount * 3);
+      for (let k = 0; k < particleCount; k++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = shellRadius * 0.95 + Math.random() * 0.45;
+        pPositions[k * 3] = r * Math.sin(phi) * Math.cos(theta);
+        pPositions[k * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+        pPositions[k * 3 + 2] = r * Math.cos(phi);
+      }
+      const pGeo = new THREE.BufferGeometry();
+      pGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+      const pMat = new THREE.PointsMaterial({
+        color: particleColor,
+        size: 0.14,
+        map: tex,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const auraParticles = new THREE.Points(pGeo, pMat);
+      group.add(auraParticles);
+
+      return {
+        sprite: auraSprite,
+        shell: auraShell,
+        particles: auraParticles,
+        phase: Math.random() * Math.PI * 2
+      };
+    }
+
+    // 地球のテクスチャ生成（青い海と緑の大陸＋雲）
+    let earthTexture = null;
+    function getEarthTexture() {
+      if (earthTexture) return earthTexture;
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+
+      // 海
+      ctx.fillStyle = '#1565c0';
+      ctx.fillRect(0, 0, 512, 256);
+
+      // 大陸（簡略化した世界地図風ポリゴン＆ブロブ）
+      ctx.fillStyle = '#43a047';
+      const continents = [
+        // 北米
+        [[70, 50], [140, 45], [155, 95], [115, 130], [85, 100]],
+        // 南米
+        [[135, 145], [175, 155], [165, 215], [140, 225], [130, 180]],
+        // ユーラシア
+        [[245, 45], [390, 40], [420, 95], [375, 125], [295, 115], [250, 90]],
+        // アフリカ
+        [[245, 115], [305, 120], [315, 175], [280, 210], [255, 170]],
+        // オーストラリア
+        [[385, 160], [435, 160], [440, 200], [390, 205]],
+        // グリーンランド
+        [[175, 25], [215, 25], [205, 50], [180, 45]]
+      ];
+      continents.forEach(poly => {
+        ctx.beginPath();
+        poly.forEach(([x, y], idx) => {
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fill();
+      });
+
+      // 極地の氷
+      ctx.fillStyle = '#e3f2fd';
+      ctx.fillRect(0, 0, 512, 16);
+      ctx.fillRect(0, 240, 512, 16);
+
+      // 薄い雲の筋
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      for (let i = 0; i < 18; i++) {
+        const cx = (i * 73) % 512;
+        const cy = 30 + ((i * 41) % 190);
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 38, 7, 0.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      earthTexture = new THREE.CanvasTexture(canvas);
+      return earthTexture;
     }
 
     // ==========================================
@@ -611,58 +936,7 @@
         radius = 0.62;
 
         if (isGold) {
-          const auraMat = new THREE.SpriteMaterial({
-            map: getGoldAuraTexture(),
-            color: 0xffe066,
-            transparent: true,
-            opacity: 0.9,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-          });
-          const auraSprite = new THREE.Sprite(auraMat);
-          auraSprite.scale.set(2.5, 2.5, 1);
-          group.add(auraSprite);
-
-          const shellMat = new THREE.MeshBasicMaterial({
-            color: 0xffd700,
-            transparent: true,
-            opacity: 0.25,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-          });
-          const auraShell = new THREE.Mesh(new THREE.SphereGeometry(0.84, 24, 24), shellMat);
-          group.add(auraShell);
-
-          const particleCount = 48;
-          const pPositions = new Float32Array(particleCount * 3);
-          for (let k = 0; k < particleCount; k++) {
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.acos(2 * Math.random() - 1);
-            const r = 0.78 + Math.random() * 0.45;
-            pPositions[k * 3] = r * Math.sin(phi) * Math.cos(theta);
-            pPositions[k * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-            pPositions[k * 3 + 2] = r * Math.cos(phi);
-          }
-          const pGeo = new THREE.BufferGeometry();
-          pGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
-          const pMat = new THREE.PointsMaterial({
-            color: 0xfff59d,
-            size: 0.14,
-            map: getGoldAuraTexture(),
-            transparent: true,
-            opacity: 0.95,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-          });
-          const auraParticles = new THREE.Points(pGeo, pMat);
-          group.add(auraParticles);
-
-          auraData = {
-            sprite: auraSprite,
-            shell: auraShell,
-            particles: auraParticles,
-            phase: Math.random() * Math.PI * 2
-          };
+          auraData = attachAuraToGroup(group, 'gold', 0.84);
         }
 
       } else if (typeId === 'gold_house') {
@@ -758,6 +1032,90 @@
         group.add(ring);
 
         radius = 0.68;
+
+      } else if (typeId === 'polar_bear') {
+        // 青いオーラをまとったシロクマ
+        const whiteFurMat = new THREE.MeshStandardMaterial({ color: 0xf8fbff, roughness: 0.35 });
+        const snoutMat = new THREE.MeshStandardMaterial({ color: 0xe1f5fe, roughness: 0.3 });
+
+        // 胴体
+        const body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 24), whiteFurMat);
+        body.scale.set(0.95, 1.15, 0.9);
+        body.position.set(0, -0.15, 0);
+        group.add(body);
+
+        // 頭
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 24), whiteFurMat);
+        head.position.set(0, 0.52, 0.08);
+        group.add(head);
+
+        // マズル（鼻先）
+        const snout = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), snoutMat);
+        snout.scale.set(1.1, 0.85, 1.15);
+        snout.position.set(0, 0.45, 0.46);
+        group.add(snout);
+
+        // 黒い鼻
+        const nose = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 12), blackMat);
+        nose.position.set(0, 0.5, 0.63);
+        group.add(nose);
+
+        // 耳
+        const earL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 14), whiteFurMat);
+        earL.position.set(-0.3, 0.84, 0.04);
+        const earR = earL.clone();
+        earR.position.x = 0.3;
+        group.add(earL, earR);
+
+        // 目
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), blackMat);
+        eyeL.position.set(-0.15, 0.6, 0.44);
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.15;
+        group.add(eyeL, eyeR);
+
+        // 手足
+        const armL = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 14), whiteFurMat);
+        armL.scale.set(0.8, 1.4, 0.8);
+        armL.position.set(-0.48, -0.05, 0.15);
+        armL.rotation.z = 0.35;
+        const armR = armL.clone();
+        armR.position.x = 0.48;
+        armR.rotation.z = -0.35;
+        group.add(armL, armR);
+
+        const legL = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 14), whiteFurMat);
+        legL.position.set(-0.26, -0.68, 0.1);
+        const legR = legL.clone();
+        legR.position.x = 0.26;
+        group.add(legL, legR);
+
+        radius = 0.72;
+        auraData = attachAuraToGroup(group, 'blue', 0.94);
+
+      } else if (typeId === 'green_earth') {
+        // 緑のオーラをまとった地球
+        const earthMat = new THREE.MeshStandardMaterial({
+          map: getEarthTexture(),
+          roughness: 0.45,
+          metalness: 0.1
+        });
+        const earthSphere = new THREE.Mesh(new THREE.SphereGeometry(0.64, 32, 32), earthMat);
+        group.add(earthSphere);
+
+        // 大気圏の薄いベール
+        const atmoMat = new THREE.MeshBasicMaterial({
+          color: 0x69f0ae,
+          transparent: true,
+          opacity: 0.18,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const atmo = new THREE.Mesh(new THREE.SphereGeometry(0.69, 24, 24), atmoMat);
+        group.add(atmo);
+
+        radius = 0.68;
+        auraData = attachAuraToGroup(group, 'green', 0.88);
       }
 
       const targetScale = 0.88;
@@ -788,14 +1146,16 @@
       modelInfo.count++;
       updatePokedexUI();
 
-      if (modelInfo.id === 'gold_smile') {
-        showNotification(`🌟 神話級0.001%！「${modelInfo.name}」光臨！！ 🌟`, true);
-      } else if (modelInfo.id === 'gold_clock') {
-        showNotification(`⌚ 驚異のレア！「${modelInfo.name}」出現！！ ⌚`, true);
-      } else if (modelInfo.rare === 2) {
-        showNotification(`👑 奇跡のレア！「${modelInfo.name}」降臨！！ 👑`, true);
-      } else if (modelInfo.rare === 1) {
-        showNotification(`✨ 超レア！「${modelInfo.name}」出現！ ✨`, false);
+      if (!modelInfo.secret) {
+        if (modelInfo.id === 'gold_smile') {
+          showNotification(`🌟 神話級0.001%！「${modelInfo.name}」光臨！！ 🌟`, true);
+        } else if (modelInfo.id === 'gold_clock') {
+          showNotification(`⌚ 驚異のレア！「${modelInfo.name}」出現！！ ⌚`, true);
+        } else if (modelInfo.rare === 2) {
+          showNotification(`👑 奇跡のレア！「${modelInfo.name}」降臨！！ 👑`, true);
+        } else if (modelInfo.rare === 1) {
+          showNotification(`✨ 超レア！「${modelInfo.name}」出現！ ✨`, false);
+        }
       }
 
       const mesh = create3DModel(modelInfo.id);
